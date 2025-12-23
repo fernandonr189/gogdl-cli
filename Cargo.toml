@@ -1,5 +1,5 @@
 [package]
-name = "gogdl-cli"
+name = "gogdl"
 version = "0.1.0"
 edition = "2024"
 
