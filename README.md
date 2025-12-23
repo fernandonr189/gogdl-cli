@@ -2,6 +2,16 @@
 
 This is a command-line tool for downloading games from Gog. It provides a simple way to login and download games.
 
+## Current state
+
+I started this project because i don't like the idea of too many electron based apps on my system. I really like Heroic Games Launcher, i love playing on linux, so i decided to build my own tool in a language that i like, which is Rust :)
+
+Of course it is still not feature-complete, i'm building this in my free time, that's also part of the reason that i'm starting this as a CLI tool. This will allow me to focus on the core features and functionalities that are necessary for a good experience. Once i'm done with the core features, i'll start working on the GUI version of this tool.
+
+Right now, the tool is in its early stages and is not yet ready for regular use. However, i'm working hard to make it as user-friendly as possible.
+
+I've managed to play games without any issues so far downloading games with this tool and importing them on steam.
+
 ## Usage:
 
 - Login to your Gog account:
@@ -43,10 +53,6 @@ gogdl download -g 1234567890 -v '2.31a' -p /path/to/download
 ## Acknowledgements
 
 This project was inspired by the Heroic Games Launcher (https://github.com/Heroic-Games-Launcher/HeroicGamesLauncher.git)
-
-I started this project because i don't like the idea of too many electron based apps on my system. I really like Heroic Games Launcher, i love playing on linux, so i decided to build my own tool in a language that i like, which is Rust :)
-
-Of course it is still not feature-complete, i'm building this in my free time, that's also part of the reason that i'm starting this as a CLI tool. This will allow me to focus on the core features and functionalities that are necessary for a good experience. Once i'm done with the core features, i'll start working on the GUI version of this tool.
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
