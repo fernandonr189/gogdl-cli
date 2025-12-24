@@ -36,4 +36,18 @@ pub enum Commands {
         /// Path to download the game to
         path: String,
     },
+    /// List wine versions
+    Proton {
+        #[arg(short, long)]
+        /// List wine versions
+        list: bool,
+
+        #[arg(short, long)]
+        /// Download a specific wine version
+        download: Option<String>,
+
+        #[arg(short, long, default_value = "1")]
+        /// Page number to list wine versions
+        page: i32,
+    },
 }

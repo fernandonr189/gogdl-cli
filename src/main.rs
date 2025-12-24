@@ -41,6 +41,11 @@ async fn main() -> Result<(), anyhow::Error> {
             let gogdl = GogDl::new(Some(auth));
             commands::games::handle_games(&gogdl).await;
         }
+        cli::Commands::Proton {
+            list,
+            download,
+            page,
+        } => commands::proton::handle_proton(list, download, page).await?,
     }
     Ok(())
 }
