@@ -20,7 +20,6 @@ pub async fn handle_proton(
         let target_release = releases.iter().find(|rel| rel.tag_name == version);
 
         if let Some(target_release) = target_release {
-            let path = format!("./{}.gz", target_release.tag_name);
             let checksum = target_release.get_checksum();
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
 
@@ -28,7 +27,7 @@ pub async fn handle_proton(
 
             tokio::spawn(async move {
                 let _ = prefix_manager_arc
-                    .download_release(&release_clone, &path, checksum, tx)
+                    .download_release(&release_clone, "./", checksum, tx)
                     .await;
             });
 
