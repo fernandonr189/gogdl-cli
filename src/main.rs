@@ -3,9 +3,10 @@ use std::process::exit;
 use clap::Parser;
 use gogdl_lib::GogDl;
 
-pub mod cli;
+mod cli;
 mod commands;
-pub mod secret;
+mod secret;
+mod settings;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
