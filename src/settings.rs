@@ -8,9 +8,9 @@ pub struct DownloadedGame {
     pub path: String,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 pub struct AppSettings {
-    pub custom_prefix_path: Option<String>,
+    pub data_path: String,
     pub downloaded_games: Vec<DownloadedGame>,
 }
 
@@ -50,7 +50,7 @@ impl AppSettings {
             Err(anyhow::anyhow!("Failed to load settings"))
         }
     }
-    pub async fn save(&self) -> Result<(), anyhow::Error> {
+    pub async fn _save(&self) -> Result<(), anyhow::Error> {
         if let Some(proj_dirs) = ProjectDirs::from("com", "fernandonr189", "gogdl") {
             let dir = proj_dirs.config_dir();
             let file_path = dir.join("settings.json");
@@ -59,6 +59,24 @@ impl AppSettings {
             Ok(())
         } else {
             Err(anyhow::anyhow!("Failed to save settings"))
+        }
+    }
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        if let Some(proj_dirs) = ProjectDirs::from("com", "fernandonr189", "gogdl") {
+            let dir = proj_dirs.data_dir();
+
+            AppSettings {
+                data_path: dir.to_string_lossy().into_owned(),
+                downloaded_games: Vec::new(),
+            }
+        } else {
+            AppSettings {
+                data_path: "".to_string(),
+                downloaded_games: Vec::new(),
+            }
         }
     }
 }

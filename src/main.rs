@@ -14,9 +14,7 @@ mod settings;
 async fn main() -> Result<(), anyhow::Error> {
     let args = cli::Args::parse();
 
-    let _settings = AppSettings::load().await?;
-
-    _settings.save().await?;
+    let settings = AppSettings::load().await?;
 
     match args.command {
         cli::Commands::Login { code, login_code } => {
@@ -52,7 +50,7 @@ async fn main() -> Result<(), anyhow::Error> {
             list,
             download,
             page,
-        } => commands::proton::handle_proton(list, download, page).await?,
+        } => commands::proton::handle_proton(list, download, page, &settings.data_path).await?,
     }
     Ok(())
 }

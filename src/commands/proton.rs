@@ -6,6 +6,7 @@ pub async fn handle_proton(
     list: bool,
     version: Option<String>,
     page: i32,
+    path: &str,
 ) -> Result<(), ClientError> {
     let prefix_manager = PrefixManager::new_with_default_client();
     let prefix_manager_arc = Arc::new(prefix_manager);
@@ -25,9 +26,11 @@ pub async fn handle_proton(
 
             let release_clone = target_release.clone();
 
+            let proton_path = format!("{}/proton", path);
+
             tokio::spawn(async move {
                 let _ = prefix_manager_arc
-                    .download_release(&release_clone, "./", checksum, tx)
+                    .download_release(&release_clone, &proton_path, checksum, tx)
                     .await;
             });
 
