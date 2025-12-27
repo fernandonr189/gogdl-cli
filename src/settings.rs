@@ -26,6 +26,17 @@ impl AppSettings {
         download_complete: bool,
         game_id: i32,
     ) {
+        match self
+            .downloaded_games
+            .iter()
+            .enumerate()
+            .find(|(_index, build)| build.build_id == build_id && build.game_id == game_id)
+        {
+            Some((index, _)) => {
+                self.downloaded_games.remove(index);
+            }
+            None => {}
+        }
         self.downloaded_games.push(DownloadedGame {
             build_id: build_id.to_string(),
             path: path.to_string(),
