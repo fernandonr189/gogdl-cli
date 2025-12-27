@@ -34,7 +34,11 @@ pub enum Commands {
 
         #[arg(short, long)]
         /// Path to download the game to
-        path: String,
+        path: Option<String>,
+
+        #[arg(short, long)]
+        /// Fix the game
+        fix: bool,
     },
     /// List wine versions
     Proton {

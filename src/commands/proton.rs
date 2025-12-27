@@ -2,11 +2,13 @@ use std::{process::exit, sync::Arc};
 
 use prefix_manager::{PrefixManager, api::client::ClientError};
 
+use crate::settings::AppSettings;
+
 pub async fn handle_proton(
     list: bool,
     version: Option<String>,
     page: i32,
-    path: &str,
+    settings: &mut AppSettings,
 ) -> Result<(), ClientError> {
     let prefix_manager = PrefixManager::new_with_default_client();
     let prefix_manager_arc = Arc::new(prefix_manager);
@@ -26,7 +28,7 @@ pub async fn handle_proton(
 
             let release_clone = target_release.clone();
 
-            let proton_path = format!("{}/proton", path);
+            let proton_path = format!("{}/proton", settings.data_path);
 
             tokio::spawn(async move {
                 let _ = prefix_manager_arc

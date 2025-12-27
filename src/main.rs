@@ -14,7 +14,7 @@ mod settings;
 async fn main() -> Result<(), anyhow::Error> {
     let args = cli::Args::parse();
 
-    let settings = AppSettings::load().await?;
+    let mut settings = AppSettings::load().await?;
 
     match args.command {
         cli::Commands::Login { code, login_code } => {
@@ -24,6 +24,7 @@ async fn main() -> Result<(), anyhow::Error> {
             game_id,
             version_id,
             path,
+            fix,
         } => {
             let auth = match secret::recover_token().await {
                 Ok(auth) => auth,
@@ -32,8 +33,30 @@ async fn main() -> Result<(), anyhow::Error> {
                     exit(1);
                 }
             };
+
+            let download_path = format!(
+                "{}/{}",
+                match path {
+                    Some(path) => {
+                        let pwd = std::env::current_dir().unwrap_or_default();
+                        format!("{}/{}", pwd.display(), path)
+                    }
+                    None => settings.data_path.clone(),
+                },
+                "games"
+            );
+
             let gogdl = GogDl::new(Some(auth));
-            commands::download::handle_download(gogdl, game_id, version_id, &path).await
+
+            commands::download::handle_download(
+                gogdl,
+                game_id,
+                version_id,
+                &download_path,
+                &mut settings,
+                fix,
+            )
+            .await
         }
         cli::Commands::Games => {
             let auth = match secret::recover_token().await {
@@ -50,7 +73,7 @@ async fn main() -> Result<(), anyhow::Error> {
             list,
             download,
             page,
-        } => commands::proton::handle_proton(list, download, page, &settings.data_path).await?,
+        } => commands::proton::handle_proton(list, download, page, &mut settings).await?,
     }
     Ok(())
 }

@@ -6,6 +6,9 @@ use tokio::fs;
 pub struct DownloadedGame {
     pub build_id: String,
     pub path: String,
+    pub proton_version: Option<String>,
+    pub download_complete: bool,
+    pub game_id: i32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -15,6 +18,24 @@ pub struct AppSettings {
 }
 
 impl AppSettings {
+    pub async fn add_game(
+        &mut self,
+        build_id: &str,
+        path: &str,
+        proton_version: Option<String>,
+        download_complete: bool,
+        game_id: i32,
+    ) {
+        self.downloaded_games.push(DownloadedGame {
+            build_id: build_id.to_string(),
+            path: path.to_string(),
+            proton_version,
+            download_complete,
+            game_id,
+        });
+        let _ = self.save().await;
+    }
+
     pub async fn initialize() -> Result<Self, anyhow::Error> {
         if let Some(project_dirs) = ProjectDirs::from("com", "fernandonr189", "gogdl") {
             let path = project_dirs.config_dir().join("settings.json");
@@ -50,7 +71,7 @@ impl AppSettings {
             Err(anyhow::anyhow!("Failed to load settings"))
         }
     }
-    pub async fn _save(&self) -> Result<(), anyhow::Error> {
+    pub async fn save(&self) -> Result<(), anyhow::Error> {
         if let Some(proj_dirs) = ProjectDirs::from("com", "fernandonr189", "gogdl") {
             let dir = proj_dirs.config_dir();
             let file_path = dir.join("settings.json");

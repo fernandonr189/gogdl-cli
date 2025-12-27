@@ -3,12 +3,34 @@ use std::{fs::File, io::BufWriter, process::exit, sync::Arc};
 use chrono::{DateTime, Utc};
 use gogdl_lib::{GogDl, GogdlError, client::ClientError, games::GameBuild};
 
-use crate::secret;
+use crate::{secret, settings::AppSettings};
 
-pub async fn handle_download(gogdl: GogDl, game_id: i32, version_id: Option<String>, path: &str) {
+pub async fn handle_download(
+    gogdl: GogDl,
+    game_id: i32,
+    version_id: Option<String>,
+    path: &str,
+    settings: &mut AppSettings,
+    fix: bool,
+) {
     let gogdl_clone = Arc::new(gogdl);
+    let mut download_build = version_id.clone().unwrap_or_default();
     let result = {
         if let Some(version_id) = version_id {
+            if settings
+                .downloaded_games
+                .iter()
+                .find(|game| {
+                    game.game_id == game_id
+                        && game.build_id == version_id
+                        && game.download_complete
+                        && !fix
+                })
+                .is_some()
+            {
+                println!("Game already downloaded");
+                return;
+            }
             download_game(gogdl_clone.clone(), game_id, &version_id, path).await
         } else {
             let game_builds = match get_builds(gogdl_clone.as_ref(), game_id).await {
@@ -30,7 +52,22 @@ pub async fn handle_download(gogdl: GogDl, game_id: i32, version_id: Option<Stri
                 .map(|(_, b)| b);
 
             if let Some(latest) = latest_build {
-                download_game(gogdl_clone.clone(), game_id, &latest.version_name, path).await
+                download_build = latest.version_name.clone();
+                if settings
+                    .downloaded_games
+                    .iter()
+                    .find(|game| {
+                        game.game_id == game_id
+                            && game.build_id == download_build
+                            && game.download_complete
+                            && !fix
+                    })
+                    .is_some()
+                {
+                    println!("Game already downloaded");
+                    return;
+                }
+                download_game(gogdl_clone.clone(), game_id, &download_build, path).await
             } else {
                 println!("Could not fetch latest build");
                 exit(1)
@@ -62,6 +99,11 @@ pub async fn handle_download(gogdl: GogDl, game_id: i32, version_id: Option<Stri
             }
             _ => println!("{}", err),
         }
+    } else {
+        let complete = result.unwrap_or(false);
+        settings
+            .add_game(&download_build, path, None, complete, game_id)
+            .await;
     }
 }
 
@@ -77,7 +119,7 @@ pub async fn download_game(
     game_id: i32,
     build_name: &str,
     path: &str,
-) -> Result<(), GogdlError> {
+) -> Result<bool, GogdlError> {
     let total_size = get_build_size(&gogdl, game_id, build_name).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
     let build_name_clone = build_name.to_string();
@@ -105,7 +147,14 @@ pub async fn download_game(
             downloaded_size as f64 / total_size as f64 * 100.0
         );
     }
-    Ok(())
+
+    if downloaded_size == total_size as i64 {
+        println!("\nDownload complete!");
+        Ok(true)
+    } else {
+        println!("\nDownload incomplete!");
+        Ok(false)
+    }
 }
 
 pub async fn get_build_size(gogdl: &GogDl, game_id: i32, build_name: &str) -> u64 {
