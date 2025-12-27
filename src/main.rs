@@ -3,6 +3,8 @@ use std::process::exit;
 use clap::Parser;
 use gogdl_lib::GogDl;
 
+use crate::settings::AppSettings;
+
 mod cli;
 mod commands;
 mod secret;
@@ -11,6 +13,10 @@ mod settings;
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
     let args = cli::Args::parse();
+
+    let _settings = AppSettings::load().await?;
+
+    _settings.save().await?;
 
     match args.command {
         cli::Commands::Login { code, login_code } => {
