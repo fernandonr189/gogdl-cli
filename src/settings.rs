@@ -13,6 +13,7 @@ pub struct DownloadedGame {
 #[derive(Serialize, Deserialize)]
 pub struct DownloadedProtonVersion {
     pub version: String,
+    pub path: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -52,10 +53,11 @@ impl AppSettings {
         let _ = self.save().await;
     }
 
-    pub async fn add_proton_version(&mut self, proton_version: &str) {
+    pub async fn add_proton_version(&mut self, version: &str, path: &str) {
         self.downloaded_proton_versions
             .push(DownloadedProtonVersion {
-                version: proton_version.to_string(),
+                version: version.to_string(),
+                path: path.to_string(),
             });
         let _ = self.save().await;
     }

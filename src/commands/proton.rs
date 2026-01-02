@@ -30,9 +30,11 @@ pub async fn handle_proton(
 
             let proton_path = format!("{}/proton", settings.data_path);
 
+            let proton_path_clone = proton_path.clone();
+
             tokio::spawn(async move {
                 let _ = prefix_manager_arc
-                    .download_release(&release_clone, &proton_path, checksum, tx)
+                    .download_release(&release_clone, &proton_path_clone, checksum, tx)
                     .await;
             });
 
@@ -48,7 +50,12 @@ pub async fn handle_proton(
                 );
             }
 
-            settings.add_proton_version(&target_release.tag_name).await;
+            settings
+                .add_proton_version(
+                    &target_release.tag_name,
+                    &format!("{}/{}", &proton_path, target_release.tag_name),
+                )
+                .await;
         } else {
             println!("Version not found");
             exit(1)

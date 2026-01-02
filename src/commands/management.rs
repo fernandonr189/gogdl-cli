@@ -3,17 +3,17 @@ use std::process::exit;
 use crate::settings::AppSettings;
 
 pub async fn set_proton_version(settings: &mut AppSettings, game_id: i32, proton_version: &str) {
-    match settings
+    let proton_path = match settings
         .downloaded_proton_versions
         .iter()
         .find(|&version| version.version == proton_version)
     {
-        Some(_version) => {}
+        Some(version) => version.path.clone(),
         None => {
             println!("Proton version not found");
             exit(1);
         }
-    }
+    };
 
     let game = match settings
         .downloaded_games
@@ -27,6 +27,6 @@ pub async fn set_proton_version(settings: &mut AppSettings, game_id: i32, proton
         }
     };
 
-    game.proton_version = Some(proton_version.to_string());
+    game.proton_version = Some(proton_path);
     let _ = settings.save().await;
 }
