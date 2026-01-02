@@ -3,7 +3,7 @@ use std::process::exit;
 use clap::Parser;
 use gogdl_lib::GogDl;
 
-use crate::settings::AppSettings;
+use crate::{cli::ManageCommand, commands::management::set_proton_version, settings::AppSettings};
 
 mod cli;
 mod commands;
@@ -74,6 +74,14 @@ async fn main() -> Result<(), anyhow::Error> {
             download,
             page,
         } => commands::proton::handle_proton(list, download, page, &mut settings).await?,
+        cli::Commands::Manage {
+            game_id,
+            subcommand,
+        } => match subcommand {
+            ManageCommand::SetProton { version } => {
+                set_proton_version(&mut settings, game_id, &version).await;
+            }
+        },
     }
     Ok(())
 }

@@ -47,6 +47,8 @@ pub async fn handle_proton(
                     downloaded_size as f64 / total_size as f64 * 100.0
                 );
             }
+
+            settings.add_proton_version(&target_release.tag_name).await;
         } else {
             println!("Version not found");
             exit(1)

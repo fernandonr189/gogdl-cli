@@ -19,6 +19,16 @@ pub enum Commands {
         login_code: Option<String>,
     },
 
+    Manage {
+        #[arg(short, long)]
+        /// Manage game config
+        game_id: i32,
+
+        #[command(subcommand)]
+        /// Subcommands for managing game config
+        subcommand: ManageCommand,
+    },
+
     /// See games info
     Games,
 
@@ -53,5 +63,14 @@ pub enum Commands {
         #[arg(short, long, default_value = "1")]
         /// Page number to list wine versions
         page: i32,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ManageCommand {
+    SetProton {
+        #[arg(short, long)]
+        /// Proton version to set
+        version: String,
     },
 }

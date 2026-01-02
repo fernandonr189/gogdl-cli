@@ -10,11 +10,16 @@ pub struct DownloadedGame {
     pub download_complete: bool,
     pub game_id: i32,
 }
+#[derive(Serialize, Deserialize)]
+pub struct DownloadedProtonVersion {
+    pub version: String,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct AppSettings {
     pub data_path: String,
     pub downloaded_games: Vec<DownloadedGame>,
+    pub downloaded_proton_versions: Vec<DownloadedProtonVersion>,
 }
 
 impl AppSettings {
@@ -47,6 +52,13 @@ impl AppSettings {
         let _ = self.save().await;
     }
 
+    pub async fn add_proton_version(&mut self, proton_version: &str) {
+        self.downloaded_proton_versions
+            .push(DownloadedProtonVersion {
+                version: proton_version.to_string(),
+            });
+        let _ = self.save().await;
+    }
     pub async fn initialize() -> Result<Self, anyhow::Error> {
         if let Some(project_dirs) = ProjectDirs::from("com", "fernandonr189", "gogdl") {
             let path = project_dirs.config_dir().join("settings.json");
@@ -103,11 +115,13 @@ impl Default for AppSettings {
             AppSettings {
                 data_path: dir.to_string_lossy().into_owned(),
                 downloaded_games: Vec::new(),
+                downloaded_proton_versions: Vec::new(),
             }
         } else {
             AppSettings {
                 data_path: "".to_string(),
                 downloaded_games: Vec::new(),
+                downloaded_proton_versions: Vec::new(),
             }
         }
     }
