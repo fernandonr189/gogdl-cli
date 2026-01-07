@@ -5,7 +5,10 @@ use gogdl_lib::GogDl;
 
 use crate::{
     cli::ManageCommand,
-    commands::{management::set_proton_version, runner::run_game},
+    commands::{
+        management::{set_executable, set_proton_version},
+        runner::run_game,
+    },
     settings::AppSettings,
 };
 
@@ -84,6 +87,9 @@ async fn main() -> Result<(), anyhow::Error> {
         } => match subcommand {
             ManageCommand::SetProton { version } => {
                 set_proton_version(&mut settings, game_id, &version).await;
+            }
+            ManageCommand::SetExecutable { path } => {
+                set_executable(&mut settings, game_id, &path).await;
             }
         },
         cli::Commands::Run { game_id } => run_game(&mut settings, game_id).await,

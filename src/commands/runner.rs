@@ -86,6 +86,8 @@ pub async fn run_game(settings: &mut AppSettings, game_id: i32) {
         let result = command
             .arg("run")
             .arg(game_path.clone())
+            .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", "/tmp/steam")
+            .env("STEAM_COMPAT_DATA_PATH", game.prefix_path.clone().unwrap())
             .current_dir(parent_path.unwrap())
             .status()
             .await;
@@ -93,12 +95,12 @@ pub async fn run_game(settings: &mut AppSettings, game_id: i32) {
         match result {
             Ok(status) => {
                 if !status.success() {
-                    eprintln!("Failed to run mgsi.exe");
+                    eprintln!("Failed to run game");
                     exit(1);
                 }
             }
             Err(err) => {
-                eprintln!("Failed to run mgsi.exe: {}", err);
+                eprintln!("Failed to run game: {}", err);
                 exit(1);
             }
         }

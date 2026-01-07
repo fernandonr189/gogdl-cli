@@ -33,3 +33,30 @@ pub async fn set_proton_version(settings: &mut AppSettings, game_id: i32, proton
     });
     let _ = settings.save().await;
 }
+
+pub async fn set_executable(settings: &mut AppSettings, game_id: i32, executable_path: &str) {
+    let game = match settings
+        .downloaded_games
+        .iter_mut()
+        .find(|game| game.game_id == game_id)
+    {
+        Some(game) => game,
+        None => {
+            println!("Game not found");
+            exit(1);
+        }
+    };
+
+    let full_path = format!("{}/{}", game.path, executable_path);
+
+    let _file = match tokio::fs::File::open(&full_path).await {
+        Ok(file) => file,
+        Err(_) => {
+            println!("File does not exist");
+            exit(1);
+        }
+    };
+
+    game.executable = Some(executable_path.to_owned());
+    let _ = settings.save().await;
+}

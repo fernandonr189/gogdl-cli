@@ -78,4 +78,10 @@ pub enum ManageCommand {
         /// Proton version to set
         version: String,
     },
+
+    SetExecutable {
+        #[arg(short, long)]
+        /// Path to the executable
+        path: String,
+    },
 }
