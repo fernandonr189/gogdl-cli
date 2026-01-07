@@ -60,3 +60,40 @@ pub async fn set_executable(settings: &mut AppSettings, game_id: i32, executable
     game.executable = Some(executable_path.to_owned());
     let _ = settings.save().await;
 }
+
+pub async fn set_arg(settings: &mut AppSettings, game_id: i32, arg: &str) {
+    let game = match settings
+        .downloaded_games
+        .iter_mut()
+        .find(|game| game.game_id == game_id)
+    {
+        Some(game) => game,
+        None => {
+            println!("Game not found");
+            exit(1);
+        }
+    };
+
+    let new_arg = format!("-{}", arg);
+
+    game.args.push(new_arg);
+    let _ = settings.save().await;
+}
+
+pub async fn set_env(settings: &mut AppSettings, game_id: i32, key: &str, value: &str) {
+    let game = match settings
+        .downloaded_games
+        .iter_mut()
+        .find(|game| game.game_id == game_id)
+    {
+        Some(game) => game,
+        None => {
+            println!("Game not found");
+            exit(1);
+        }
+    };
+
+    game.environment_variables
+        .push((key.to_owned(), value.to_owned()));
+    let _ = settings.save().await;
+}

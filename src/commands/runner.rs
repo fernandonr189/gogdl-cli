@@ -79,18 +79,20 @@ pub async fn run_game(settings: &mut AppSettings, game_id: i32) {
         for (key, value) in &game.environment_variables {
             command.env(key, value);
         }
-        for arg in &game.args {
-            command.arg(arg);
-        }
 
-        let result = command
+        command
             .arg("run")
             .arg(game_path.clone())
             .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", "/tmp/steam")
             .env("STEAM_COMPAT_DATA_PATH", game.prefix_path.clone().unwrap())
-            .current_dir(parent_path.unwrap())
-            .status()
-            .await;
+            .current_dir(parent_path.unwrap());
+
+        for arg in &game.args {
+            command.arg(arg);
+        }
+
+        println!("{:?}", command);
+        let result = command.status().await;
 
         match result {
             Ok(status) => {

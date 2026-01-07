@@ -84,4 +84,19 @@ pub enum ManageCommand {
         /// Path to the executable
         path: String,
     },
+
+    SetArg {
+        #[arg(short, long)]
+        /// Argument to set
+        arg: String,
+    },
+
+    SetEnv {
+        #[arg(short, long)]
+        /// Argument to set
+        key: String,
+        #[arg(short, long)]
+        /// Value to set
+        value: String,
+    },
 }
