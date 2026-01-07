@@ -3,7 +3,11 @@ use std::process::exit;
 use clap::Parser;
 use gogdl_lib::GogDl;
 
-use crate::{cli::ManageCommand, commands::management::set_proton_version, settings::AppSettings};
+use crate::{
+    cli::ManageCommand,
+    commands::{management::set_proton_version, runner::run_game},
+    settings::AppSettings,
+};
 
 mod cli;
 mod commands;
@@ -56,7 +60,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 &mut settings,
                 fix,
             )
-            .await
+            .await?;
         }
         cli::Commands::Games => {
             let auth = match secret::recover_token().await {
@@ -82,6 +86,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 set_proton_version(&mut settings, game_id, &version).await;
             }
         },
+        cli::Commands::Run { game_id } => run_game(&mut settings, game_id).await,
     }
     Ok(())
 }

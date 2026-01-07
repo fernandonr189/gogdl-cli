@@ -9,6 +9,11 @@ pub struct Args {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    Run {
+        #[arg(short, long)]
+        game_id: i32,
+    },
+
     /// Auth commands
     Login {
         #[arg(short, long)]

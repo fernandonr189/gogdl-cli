@@ -3,3 +3,4 @@ pub mod games;
 pub mod login;
 pub mod management;
 pub mod proton;
+pub mod runner;

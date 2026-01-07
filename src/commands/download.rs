@@ -12,9 +12,10 @@ pub async fn handle_download(
     path: &str,
     settings: &mut AppSettings,
     fix: bool,
-) {
+) -> Result<(), anyhow::Error> {
     let gogdl_clone = Arc::new(gogdl);
     let mut download_build = version_id.clone().unwrap_or_default();
+    let game_details = gogdl_clone.get_game_details(game_id).await?;
     let result = {
         if let Some(version_id) = version_id {
             if settings
@@ -29,7 +30,7 @@ pub async fn handle_download(
                 .is_some()
             {
                 println!("Game already downloaded");
-                return;
+                return Ok(());
             }
             download_game(gogdl_clone.clone(), game_id, &version_id, path).await
         } else {
@@ -65,7 +66,7 @@ pub async fn handle_download(
                     .is_some()
                 {
                     println!("Game already downloaded");
-                    return;
+                    return Ok(());
                 }
                 download_game(gogdl_clone.clone(), game_id, &download_build, path).await
             } else {
@@ -92,18 +93,30 @@ pub async fn handle_download(
                         Err(err) => eprintln!("Error storing token: {}", err),
                     }
 
-                    println!("Access token refreshed, please try again")
+                    println!("Access token refreshed, please try again");
+                    Ok(())
                 } else {
-                    println!("HttpError: Status: {}, Body: {}", status.as_u16(), body)
+                    println!("HttpError: Status: {}, Body: {}", status.as_u16(), body);
+                    Ok(())
                 }
             }
-            _ => println!("{}", err),
+            _ => {
+                println!("{}", err);
+                Ok(())
+            }
         }
     } else {
         let complete = result.unwrap_or(false);
         settings
-            .add_game(&download_build, path, None, complete, game_id)
+            .add_game(
+                &download_build,
+                &format!("{}/{}", path, game_details.title),
+                None,
+                complete,
+                game_id,
+            )
             .await;
+        Ok(())
     }
 }
 

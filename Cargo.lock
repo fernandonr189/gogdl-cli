@@ -631,7 +631,6 @@ dependencies = [
 [[package]]
 name = "gogdl-lib"
 version = "0.1.0"
-source = "git+https://github.com/fernandonr189/gogdl-lib.git?tag=v0.1.1#7918f9c21f2817afd9a72154c8b842f683d30235"
 dependencies = [
  "flate2",
  "futures",

@@ -6,10 +6,15 @@ use tokio::fs;
 pub struct DownloadedGame {
     pub build_id: String,
     pub path: String,
-    pub proton_version: Option<String>,
+    pub proton_version: Option<DownloadedProtonVersion>,
     pub download_complete: bool,
     pub game_id: i32,
+    pub prefix_path: Option<String>,
+    pub executable: Option<String>,
+    pub environment_variables: Vec<(String, String)>,
+    pub args: Vec<String>,
 }
+
 #[derive(Serialize, Deserialize)]
 pub struct DownloadedProtonVersion {
     pub version: String,
@@ -28,7 +33,7 @@ impl AppSettings {
         &mut self,
         build_id: &str,
         path: &str,
-        proton_version: Option<String>,
+        proton_version: Option<DownloadedProtonVersion>,
         download_complete: bool,
         game_id: i32,
     ) {
@@ -49,6 +54,10 @@ impl AppSettings {
             proton_version,
             download_complete,
             game_id,
+            prefix_path: None,
+            executable: None,
+            environment_variables: Vec::new(),
+            args: Vec::new(),
         });
         let _ = self.save().await;
     }

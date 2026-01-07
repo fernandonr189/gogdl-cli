@@ -1,6 +1,6 @@
 use std::process::exit;
 
-use crate::settings::AppSettings;
+use crate::settings::{AppSettings, DownloadedProtonVersion};
 
 pub async fn set_proton_version(settings: &mut AppSettings, game_id: i32, proton_version: &str) {
     let proton_path = match settings
@@ -27,6 +27,9 @@ pub async fn set_proton_version(settings: &mut AppSettings, game_id: i32, proton
         }
     };
 
-    game.proton_version = Some(proton_path);
+    game.proton_version = Some(DownloadedProtonVersion {
+        version: proton_version.to_string(),
+        path: proton_path,
+    });
     let _ = settings.save().await;
 }
