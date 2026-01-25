@@ -4,10 +4,8 @@ use clap::Parser;
 use gogdl_lib::GogDl;
 
 use crate::{
-    cli::ManageCommand,
     commands::{
-        management::{set_arg, set_env, set_executable, set_proton_version},
-        runner::run_game,
+        games::handle_games, management::handle_manage, proton::handle_proton, runner::handle_run,
     },
     settings::AppSettings,
 };
@@ -74,31 +72,17 @@ async fn main() -> Result<(), anyhow::Error> {
                 }
             };
             let gogdl = GogDl::new(Some(auth));
-            commands::games::handle_games(&gogdl).await;
+            handle_games(&gogdl, &mut settings).await;
         }
-        cli::Commands::Proton {
-            list,
-            download,
-            page,
-        } => commands::proton::handle_proton(list, download, page, &mut settings).await?,
-        cli::Commands::Manage {
-            game_id,
-            subcommand,
-        } => match subcommand {
-            ManageCommand::SetProton { version } => {
-                set_proton_version(&mut settings, game_id, &version).await;
-            }
-            ManageCommand::SetExecutable { path } => {
-                set_executable(&mut settings, game_id, &path).await;
-            }
-            ManageCommand::SetArg { arg } => {
-                set_arg(&mut settings, game_id, &arg).await;
-            }
-            ManageCommand::SetEnv { key, value } => {
-                set_env(&mut settings, game_id, &key, &value).await;
-            }
-        },
-        cli::Commands::Run { game_id } => run_game(&mut settings, game_id).await,
+        cli::Commands::Proton => {
+            handle_proton(&mut settings).await;
+        }
+        cli::Commands::Manage => {
+            handle_manage(&mut settings).await;
+        }
+        cli::Commands::Run => {
+            handle_run(&mut settings).await;
+        }
     }
     Ok(())
 }

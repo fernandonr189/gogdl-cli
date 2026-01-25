@@ -5,6 +5,29 @@ use gogdl_lib::{GogDl, GogdlError, client::ClientError, games::GameBuild};
 
 use crate::{secret, settings::AppSettings};
 
+/// Handle download from interactive games menu (creates new GogDl wrapped in Arc)
+pub async fn handle_download_for_game(
+    game_id: i32,
+    version_id: Option<String>,
+    path: &str,
+    settings: &mut AppSettings,
+    fix: bool,
+) -> Result<(), anyhow::Error> {
+    // We need to create a new GogDl instance with the same auth to wrap in Arc
+    // This is a workaround since we can't clone GogDl or move a reference into Arc
+    let auth = match secret::recover_token().await {
+        Ok(auth) => auth,
+        Err(err) => {
+            eprintln!("Failed to recover token: {}, please login again", err);
+            exit(1);
+        }
+    };
+    let gogdl_arc = Arc::new(GogDl::new(Some(auth)));
+
+    handle_download_internal(gogdl_arc, game_id, version_id, path, settings, fix).await
+}
+
+/// Handle download from CLI command (takes owned GogDl)
 pub async fn handle_download(
     gogdl: GogDl,
     game_id: i32,
@@ -13,28 +36,36 @@ pub async fn handle_download(
     settings: &mut AppSettings,
     fix: bool,
 ) -> Result<(), anyhow::Error> {
-    let gogdl_clone = Arc::new(gogdl);
+    let gogdl_arc = Arc::new(gogdl);
+    handle_download_internal(gogdl_arc, game_id, version_id, path, settings, fix).await
+}
+
+/// Internal download handler that uses Arc<GogDl> for proper progress reporting
+async fn handle_download_internal(
+    gogdl: Arc<GogDl>,
+    game_id: i32,
+    version_id: Option<String>,
+    path: &str,
+    settings: &mut AppSettings,
+    fix: bool,
+) -> Result<(), anyhow::Error> {
     let mut download_build = version_id.clone().unwrap_or_default();
-    let game_details = gogdl_clone.get_game_details(game_id).await?;
+    let game_details = gogdl.get_game_details(game_id).await?;
+
     let result = {
         if let Some(version_id) = version_id {
-            if settings
-                .downloaded_games
-                .iter()
-                .find(|game| {
-                    game.game_id == game_id
-                        && game.build_id == version_id
-                        && game.download_complete
-                        && !fix
-                })
-                .is_some()
-            {
+            if settings.downloaded_games.iter().any(|game| {
+                game.game_id == game_id
+                    && game.build_id == version_id
+                    && game.download_complete
+                    && !fix
+            }) {
                 println!("Game already downloaded");
                 return Ok(());
             }
-            download_game(gogdl_clone.clone(), game_id, &version_id, path).await
+            download_game(gogdl.clone(), game_id, &version_id, path).await
         } else {
-            let game_builds = match get_builds(gogdl_clone.as_ref(), game_id).await {
+            let game_builds = match get_builds(&gogdl, game_id).await {
                 Ok(builds) => builds,
                 Err(err) => {
                     println!("Error fetching game builds: {}", err);
@@ -54,34 +85,28 @@ pub async fn handle_download(
 
             if let Some(latest) = latest_build {
                 download_build = latest.version_name.clone();
-                if settings
-                    .downloaded_games
-                    .iter()
-                    .find(|game| {
-                        game.game_id == game_id
-                            && game.build_id == download_build
-                            && game.download_complete
-                            && !fix
-                    })
-                    .is_some()
-                {
+                if settings.downloaded_games.iter().any(|game| {
+                    game.game_id == game_id
+                        && game.build_id == download_build
+                        && game.download_complete
+                        && !fix
+                }) {
                     println!("Game already downloaded");
                     return Ok(());
                 }
-                download_game(gogdl_clone.clone(), game_id, &download_build, path).await
+                download_game(gogdl.clone(), game_id, &download_build, path).await
             } else {
                 println!("Could not fetch latest build");
                 exit(1)
             }
         }
     };
+
     if let Err(err) = result {
         match err {
             GogdlError::ClientError(ClientError::Http { status, body }) => {
                 if status.as_u16() == 401 {
-                    // refresh token
-
-                    let auth = match gogdl_clone.refresh_token().await {
+                    let auth = match gogdl.refresh_token().await {
                         Ok(auth) => auth,
                         Err(_) => {
                             println!("Could not refresh auth, please login again");
@@ -137,6 +162,8 @@ pub async fn download_game(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
     let build_name_clone = build_name.to_string();
     let path_clone = path.to_string();
+
+    // Spawn the download task
     tokio::spawn(async move {
         match gogdl
             .download_build(game_id, &build_name_clone, tx, &path_clone)
@@ -144,13 +171,13 @@ pub async fn download_game(
         {
             Ok(_) => {}
             Err(err) => {
-                println!("Error downloading build: {}", err);
-                exit(1);
+                println!("\nError downloading build: {}", err);
             }
         }
     });
 
-    let mut downloaded_size = 0;
+    // Progress reporting loop
+    let mut downloaded_size: i64 = 0;
     while let Some(size) = rx.recv().await {
         downloaded_size += size;
         print!(
@@ -159,13 +186,21 @@ pub async fn download_game(
             total_size / 1024 / 1024,
             downloaded_size as f64 / total_size as f64 * 100.0
         );
+        // Flush stdout to ensure progress is displayed immediately
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
     }
 
-    if downloaded_size == total_size as i64 {
-        println!("\nDownload complete!");
+    println!(); // New line after progress
+
+    if downloaded_size >= total_size as i64 {
+        println!("Download complete!");
         Ok(true)
     } else {
-        println!("\nDownload incomplete!");
+        println!(
+            "Download incomplete! ({}/{} bytes)",
+            downloaded_size, total_size
+        );
         Ok(false)
     }
 }
@@ -176,14 +211,12 @@ pub async fn get_build_size(gogdl: &GogDl, game_id: i32, build_name: &str) -> u6
             let total_size: u64 = build_chunks.iter().map(|chunk| chunk.compressed_size).sum();
             println!("Total size: {} MB", total_size / 1024 / 1024);
             println!("Number of chunks: {}", build_chunks.len());
-            return total_size;
+            total_size
         }
         Err(err) => match err {
             GogdlError::ClientError(ClientError::Http { status, body }) => {
                 let _body = body;
                 if status.as_u16() == 401 {
-                    // refresh token
-
                     let auth = match gogdl.refresh_token().await {
                         Ok(auth) => auth,
                         Err(_) => {
@@ -198,9 +231,12 @@ pub async fn get_build_size(gogdl: &GogDl, game_id: i32, build_name: &str) -> u6
 
                     println!("Access token refreshed, please try again")
                 }
+                0
             }
-            _ => println!("{}", err),
+            _ => {
+                println!("{}", err);
+                0
+            }
         },
     }
-    return 0;
 }

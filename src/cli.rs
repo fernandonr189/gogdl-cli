@@ -9,10 +9,8 @@ pub struct Args {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Run {
-        #[arg(short, long)]
-        game_id: i32,
-    },
+    /// Run an installed game (interactive selection)
+    Run,
 
     /// Auth commands
     Login {
@@ -24,20 +22,13 @@ pub enum Commands {
         login_code: Option<String>,
     },
 
-    Manage {
-        #[arg(short, long)]
-        /// Manage game config
-        game_id: i32,
+    /// Manage game configuration (interactive)
+    Manage,
 
-        #[command(subcommand)]
-        /// Subcommands for managing game config
-        subcommand: ManageCommand,
-    },
-
-    /// See games info
+    /// Browse and install games (interactive)
     Games,
 
-    /// Download a game
+    /// Download a specific game by ID
     Download {
         #[arg(short, long)]
         /// Id of the game to download (will download latest version by default)
@@ -55,48 +46,7 @@ pub enum Commands {
         /// Fix the game
         fix: bool,
     },
-    /// List wine versions
-    Proton {
-        #[arg(short, long)]
-        /// List wine versions
-        list: bool,
 
-        #[arg(short, long)]
-        /// Download a specific wine version
-        download: Option<String>,
-
-        #[arg(short, long, default_value = "1")]
-        /// Page number to list wine versions
-        page: i32,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum ManageCommand {
-    SetProton {
-        #[arg(short, long)]
-        /// Proton version to set
-        version: String,
-    },
-
-    SetExecutable {
-        #[arg(short, long)]
-        /// Path to the executable
-        path: String,
-    },
-
-    SetArg {
-        #[arg(short, long)]
-        /// Argument to set
-        arg: String,
-    },
-
-    SetEnv {
-        #[arg(short, long)]
-        /// Argument to set
-        key: String,
-        #[arg(short, long)]
-        /// Value to set
-        value: String,
-    },
+    /// Manage Proton/Wine versions (interactive)
+    Proton,
 }

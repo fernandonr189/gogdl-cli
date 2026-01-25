@@ -15,7 +15,7 @@ pub struct DownloadedGame {
     pub args: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct DownloadedProtonVersion {
     pub version: String,
     pub path: String,
