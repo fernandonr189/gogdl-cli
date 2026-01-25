@@ -3,6 +3,7 @@ use std::process::exit;
 use console::style;
 use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
 
+use crate::hint;
 use crate::settings::{AppSettings, DownloadedGame, DownloadedProtonVersion};
 
 pub async fn handle_manage(settings: &mut AppSettings) {
@@ -29,7 +30,7 @@ pub async fn handle_manage(settings: &mut AppSettings) {
             .collect();
 
         let mut options = game_names.clone();
-        options.push(style("← Back / Exit").dim().to_string());
+        options.push("← Back / Exit".to_string());
 
         println!();
         println!("{}", style("⚙️  Game Management").bold().cyan());
@@ -59,15 +60,15 @@ fn get_game_status(game: &DownloadedGame) -> String {
     let mut status_parts = Vec::new();
 
     if game.proton_version.is_some() {
-        status_parts.push(style("proton").green().to_string());
+        status_parts.push("proton".to_string());
     } else {
-        status_parts.push(style("no proton").red().to_string());
+        status_parts.push("no proton".to_string());
     }
 
     if game.executable.is_some() {
-        status_parts.push(style("exe").green().to_string());
+        status_parts.push("exe".to_string());
     } else {
-        status_parts.push(style("no exe").red().to_string());
+        status_parts.push("no exe".to_string());
     }
 
     format!("[{}]", status_parts.join(", "))
@@ -172,7 +173,7 @@ async fn set_proton_interactive(settings: &mut AppSettings, game_id: i32) {
         .collect();
 
     let mut options: Vec<&str> = version_names.clone();
-    options.push("← Cancel");
+    options.push("<- Cancel");
 
     println!();
     let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
@@ -184,6 +185,10 @@ async fn set_proton_interactive(settings: &mut AppSettings, game_id: i32) {
     match selection {
         Ok(Some(idx)) if idx < settings.downloaded_proton_versions.len() => {
             let version_name = settings.downloaded_proton_versions[idx].version.clone();
+
+            // Print CLI command hint
+            hint::print_command_hint(&hint::manage_set_proton_command(game_id, &version_name));
+
             set_proton_version(settings, game_id, &version_name).await;
             println!(
                 "{}",
@@ -234,7 +239,7 @@ async fn set_executable_interactive(settings: &mut AppSettings, game_id: i32) {
 
     let mut options: Vec<String> = executables.clone();
     options.push("Enter path manually".to_string());
-    options.push("← Cancel".to_string());
+    options.push("<- Cancel".to_string());
 
     println!();
     println!(
@@ -251,6 +256,10 @@ async fn set_executable_interactive(settings: &mut AppSettings, game_id: i32) {
     match selection {
         Ok(Some(idx)) if idx < executables.len() => {
             let selected_exe = &executables[idx];
+
+            // Print CLI command hint
+            hint::print_command_hint(&hint::manage_set_executable_command(game_id, selected_exe));
+
             set_executable(settings, game_id, selected_exe).await;
             println!(
                 "{}",
@@ -264,6 +273,12 @@ async fn set_executable_interactive(settings: &mut AppSettings, game_id: i32) {
                 .unwrap_or_default();
 
             if !manual_path.is_empty() {
+                // Print CLI command hint
+                hint::print_command_hint(&hint::manage_set_executable_command(
+                    game_id,
+                    &manual_path,
+                ));
+
                 set_executable(settings, game_id, &manual_path).await;
                 println!(
                     "{}",
@@ -355,6 +370,9 @@ async fn add_arg_interactive(settings: &mut AppSettings, game_id: i32) {
         .unwrap_or_default();
 
     if !arg.is_empty() {
+        // Print CLI command hint
+        hint::print_command_hint(&hint::manage_add_arg_command(game_id, &arg));
+
         set_arg(settings, game_id, &arg).await;
         println!("{}", style(format!("✅ Added argument: -{}", arg)).green());
     } else {
@@ -363,6 +381,28 @@ async fn add_arg_interactive(settings: &mut AppSettings, game_id: i32) {
 }
 
 async fn clear_args(settings: &mut AppSettings, game_id: i32) {
+    // Print CLI command hint
+    hint::print_command_hint(&hint::manage_clear_args_command(game_id));
+
+    let game = match settings
+        .downloaded_games
+        .iter_mut()
+        .find(|g| g.game_id == game_id)
+    {
+        Some(g) => g,
+        None => {
+            println!("{}", style("Game not found").red());
+            return;
+        }
+    };
+
+    game.args.clear();
+    let _ = settings.save().await;
+    println!("{}", style("✅ Launch arguments cleared").green());
+}
+
+/// CLI mode: clear all launch arguments
+pub async fn clear_args_cli(settings: &mut AppSettings, game_id: i32) {
     let game = match settings
         .downloaded_games
         .iter_mut()
@@ -397,6 +437,9 @@ async fn add_env_interactive(settings: &mut AppSettings, game_id: i32) {
         .interact_text()
         .unwrap_or_default();
 
+    // Print CLI command hint
+    hint::print_command_hint(&hint::manage_add_env_command(game_id, &key, &value));
+
     set_env(settings, game_id, &key, &value).await;
     println!(
         "{}",
@@ -405,6 +448,28 @@ async fn add_env_interactive(settings: &mut AppSettings, game_id: i32) {
 }
 
 async fn clear_env_vars(settings: &mut AppSettings, game_id: i32) {
+    // Print CLI command hint
+    hint::print_command_hint(&hint::manage_clear_env_command(game_id));
+
+    let game = match settings
+        .downloaded_games
+        .iter_mut()
+        .find(|g| g.game_id == game_id)
+    {
+        Some(g) => g,
+        None => {
+            println!("{}", style("Game not found").red());
+            return;
+        }
+    };
+
+    game.environment_variables.clear();
+    let _ = settings.save().await;
+    println!("{}", style("✅ Environment variables cleared").green());
+}
+
+/// CLI mode: clear all environment variables
+pub async fn clear_env_cli(settings: &mut AppSettings, game_id: i32) {
     let game = match settings
         .downloaded_games
         .iter_mut()

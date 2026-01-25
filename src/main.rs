@@ -4,6 +4,7 @@ use clap::Parser;
 use gogdl_lib::GogDl;
 
 use crate::{
+    cli::ManageAction,
     commands::{
         games::handle_games, management::handle_manage, proton::handle_proton, runner::handle_run,
     },
@@ -12,6 +13,7 @@ use crate::{
 
 mod cli;
 mod commands;
+mod hint;
 mod secret;
 mod settings;
 
@@ -42,7 +44,7 @@ async fn main() -> Result<(), anyhow::Error> {
             let download_path = format!(
                 "{}/{}",
                 match path {
-                    Some(path) => {
+                    Some(ref path) => {
                         let pwd = std::env::current_dir().unwrap_or_default();
                         format!("{}/{}", pwd.display(), path)
                     }
@@ -63,7 +65,7 @@ async fn main() -> Result<(), anyhow::Error> {
             )
             .await?;
         }
-        cli::Commands::Games => {
+        cli::Commands::Games { list } => {
             let auth = match secret::recover_token().await {
                 Ok(auth) => auth,
                 Err(err) => {
@@ -72,16 +74,80 @@ async fn main() -> Result<(), anyhow::Error> {
                 }
             };
             let gogdl = GogDl::new(Some(auth));
-            handle_games(&gogdl, &mut settings).await;
+
+            if list {
+                // Direct CLI mode: just list games
+                commands::games::list_games_cli(&gogdl).await;
+            } else {
+                // Interactive mode
+                handle_games(&gogdl, &mut settings).await;
+            }
         }
-        cli::Commands::Proton => {
-            handle_proton(&mut settings).await;
+        cli::Commands::Proton {
+            list,
+            download,
+            page,
+            installed,
+            remove,
+        } => {
+            // Check if any direct CLI flags are provided
+            if list || download.is_some() || installed || remove.is_some() {
+                // Direct CLI mode
+                commands::proton::handle_proton_cli(
+                    list,
+                    download,
+                    page,
+                    installed,
+                    remove,
+                    &mut settings,
+                )
+                .await;
+            } else {
+                // Interactive mode
+                handle_proton(&mut settings).await;
+            }
         }
-        cli::Commands::Manage => {
-            handle_manage(&mut settings).await;
+        cli::Commands::Manage { game_id, action } => {
+            if let (Some(gid), Some(act)) = (game_id, action.clone()) {
+                // Direct CLI mode
+                match act {
+                    ManageAction::SetProton { version } => {
+                        commands::management::set_proton_version(&mut settings, gid, &version)
+                            .await;
+                    }
+                    ManageAction::SetExecutable { path } => {
+                        commands::management::set_executable(&mut settings, gid, &path).await;
+                    }
+                    ManageAction::AddArg { arg } => {
+                        commands::management::set_arg(&mut settings, gid, &arg).await;
+                    }
+                    ManageAction::ClearArgs => {
+                        commands::management::clear_args_cli(&mut settings, gid).await;
+                    }
+                    ManageAction::AddEnv { key, value } => {
+                        commands::management::set_env(&mut settings, gid, &key, &value).await;
+                    }
+                    ManageAction::ClearEnv => {
+                        commands::management::clear_env_cli(&mut settings, gid).await;
+                    }
+                }
+            } else if game_id.is_some() && action.is_none() {
+                eprintln!("Error: game_id provided but no action specified.");
+                eprintln!("Use --help to see available actions.");
+                exit(1);
+            } else {
+                // Interactive mode
+                handle_manage(&mut settings).await;
+            }
         }
-        cli::Commands::Run => {
-            handle_run(&mut settings).await;
+        cli::Commands::Run { game_id } => {
+            if let Some(gid) = game_id {
+                // Direct CLI mode
+                commands::runner::run_game(&mut settings, gid).await;
+            } else {
+                // Interactive mode
+                handle_run(&mut settings).await;
+            }
         }
     }
     Ok(())

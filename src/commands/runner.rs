@@ -4,6 +4,7 @@ use console::style;
 use dialoguer::{FuzzySelect, theme::ColorfulTheme};
 use tokio::process::Command;
 
+use crate::hint;
 use crate::settings::{AppSettings, DownloadedProtonVersion};
 
 pub async fn handle_run(settings: &mut AppSettings) {
@@ -20,13 +21,13 @@ pub async fn handle_run(settings: &mut AppSettings) {
         .iter()
         .map(|g| {
             let name = g.path.split('/').last().unwrap_or("Unknown");
-            let status = get_run_status(g);
+            let status = get_run_status_plain(g);
             format!("{} {}", name, status)
         })
         .collect();
 
     let mut options = game_names.clone();
-    options.push(style("← Exit").dim().to_string());
+    options.push("← Back / Exit".to_string());
 
     println!();
     println!("{}", style("🎮 Run a Game").bold().cyan());
@@ -42,6 +43,10 @@ pub async fn handle_run(settings: &mut AppSettings) {
     match selection {
         Ok(Some(idx)) if idx < settings.downloaded_games.len() => {
             let game_id = settings.downloaded_games[idx].game_id;
+
+            // Print CLI command hint
+            hint::print_command_hint(&hint::run_command(game_id));
+
             run_game(settings, game_id).await;
         }
         Ok(Some(_)) | Ok(None) | Err(_) => {
@@ -50,12 +55,13 @@ pub async fn handle_run(settings: &mut AppSettings) {
     }
 }
 
-fn get_run_status(game: &crate::settings::DownloadedGame) -> String {
+/// Plain text status for use in dialoguer menus (no ANSI codes)
+fn get_run_status_plain(game: &crate::settings::DownloadedGame) -> String {
     let proton_ok = game.proton_version.is_some();
     let exe_ok = game.executable.is_some();
 
     if proton_ok && exe_ok {
-        style("[ready]").green().to_string()
+        "[ready]".to_string()
     } else {
         let mut missing = Vec::new();
         if !proton_ok {
@@ -64,9 +70,7 @@ fn get_run_status(game: &crate::settings::DownloadedGame) -> String {
         if !exe_ok {
             missing.push("exe");
         }
-        style(format!("[needs: {}]", missing.join(", ")))
-            .yellow()
-            .to_string()
+        format!("[needs: {}]", missing.join(", "))
     }
 }
 

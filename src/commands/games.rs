@@ -4,8 +4,9 @@ use console::style;
 use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
 use gogdl_lib::{GogDl, GogdlError, client::ClientError, games::GameDetails};
 
-use crate::{secret, settings::AppSettings};
+use crate::{hint, secret, settings::AppSettings};
 
+/// Interactive games browser
 pub async fn handle_games(gogdl: &GogDl, settings: &mut AppSettings) {
     let games = match fetch_games(gogdl).await {
         Ok(games) => games,
@@ -29,7 +30,7 @@ pub async fn handle_games(gogdl: &GogDl, settings: &mut AppSettings) {
                     .iter()
                     .any(|dg| dg.game_id == g.id);
                 if installed {
-                    format!("{} {}", g.title, style("[installed]").green())
+                    format!("{} [installed]", g.title)
                 } else {
                     g.title.clone()
                 }
@@ -37,7 +38,7 @@ pub async fn handle_games(gogdl: &GogDl, settings: &mut AppSettings) {
             .collect();
 
         let mut options = game_names.clone();
-        options.push(style("← Back / Exit").dim().to_string());
+        options.push("← Back / Exit".to_string());
 
         println!();
         println!("{}", style("🎮 Your GOG Library").bold().cyan());
@@ -64,6 +65,33 @@ pub async fn handle_games(gogdl: &GogDl, settings: &mut AppSettings) {
             }
         }
     }
+}
+
+/// CLI mode: list all owned games
+pub async fn list_games_cli(gogdl: &GogDl) {
+    let games = match fetch_games(gogdl).await {
+        Ok(games) => games,
+        Err(err) => {
+            handle_error(err, gogdl).await;
+            return;
+        }
+    };
+
+    if games.is_empty() {
+        println!("{}", style("No games found in your library.").yellow());
+        return;
+    }
+
+    println!();
+    println!("{}", style("Your GOG Library:").bold());
+    println!();
+
+    for game in &games {
+        println!("{} - {}", style(game.id).cyan(), game.title);
+    }
+
+    println!();
+    println!("{}", style(format!("Total: {} game(s)", games.len())).dim());
 }
 
 async fn handle_game_selection(game: &GameDetails, settings: &mut AppSettings) {
@@ -111,15 +139,22 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings) {
         .unwrap_or(default_path.clone());
 
     let download_path = if custom_path.is_empty() {
-        default_path
+        default_path.clone()
     } else if custom_path.starts_with('/') || custom_path.starts_with('~') {
-        custom_path
+        custom_path.clone()
     } else {
         let pwd = std::env::current_dir().unwrap_or_default();
         format!("{}/{}", pwd.display(), custom_path)
     };
 
-    println!();
+    // Print CLI command hint
+    let path_arg = if download_path == format!("{}/games", settings.data_path) {
+        None
+    } else {
+        Some(download_path.as_str())
+    };
+    hint::print_command_hint(&hint::download_command(game.id, path_arg));
+
     println!(
         "{}",
         style(format!("📁 Downloading to: {}", download_path)).dim()

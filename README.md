@@ -1,12 +1,12 @@
 # gogdl-cli
 
-This is a command-line tool for downloading and running games from GOG. It provides an interactive way to browse your library, install games, and run them using Proton/Wine.
+This is a command-line tool for downloading and running games from GOG. It provides both an interactive mode for ease of use and direct CLI commands for scripting and automation.
 
 ## Current state
 
 I started this project because I don't like the idea of too many Electron-based apps on my system. I really like Heroic Games Launcher and love playing on Linux, so I decided to build my own tool in Rust.
 
-The tool is still in its early stages but is now functional for downloading, configuring, and running games. It features an interactive CLI that makes it easy to browse your library, manage game settings, and launch games.
+The tool is now functional for downloading, configuring, and running games. It features an interactive CLI that makes it easy to browse your library, manage game settings, and launch games - while also providing direct CLI commands for scripting.
 
 ## Features
 
@@ -16,6 +16,7 @@ The tool is still in its early stages but is now functional for downloading, con
 - 🍷 Automatic Proton/Wine prefix management
 - ⚙️ Configure game settings (executable, launch args, environment variables)
 - 🚀 Run games with automatic setup prompts
+- 💡 CLI command hints shown during interactive use (for learning scripting commands)
 
 ## Installation
 
@@ -40,6 +41,12 @@ gogdl login -c <code>
 ```
 
 Your session tokens will be stored securely using `org.freedesktop.secrets`.
+
+---
+
+## Interactive Mode
+
+The following commands open interactive menus when run without arguments:
 
 ### Browse and Install Games
 
@@ -90,24 +97,92 @@ gogdl proton
 ```
 
 This opens an interactive menu where you can:
-- **Browse & download new versions** - Paginated list of available Proton-GE versions with download sizes, showing which are already installed
-- **View installed versions** - See all your currently installed Proton versions and their paths
-- **Remove an installed version** - Delete a Proton version (warns if it's in use by any games)
+- **Browse & download new versions** - Paginated list of available Proton-GE versions with download sizes
+- **View installed versions** - See all your currently installed Proton versions
+- **Remove an installed version** - Delete a Proton version (warns if it's in use)
 
-### Direct Download (Advanced)
+---
 
-For scripting or if you know the game ID:
+## Direct CLI Commands (for scripting)
+
+All commands also support direct CLI flags for use in scripts or automation.
+
+### List Owned Games
 
 ```bash
-gogdl download -g <game_id> -p <path>
+gogdl games -l
 ```
 
-Download a specific version:
+Lists all games in your GOG library with their IDs.
+
+### Download a Game
+
 ```bash
-gogdl download -g <game_id> -v '<version>' -p <path>
+# Download to default location
+gogdl download -g <game_id>
+
+# Download to custom path
+gogdl download -g <game_id> -p "/path/to/games"
+
+# Download specific version
+gogdl download -g <game_id> -v "<version>"
+
+# Re-download/fix existing game
+gogdl download -g <game_id> -f
 ```
 
-## Example Workflow
+### Run a Game
+
+```bash
+gogdl run -g <game_id>
+```
+
+Runs the specified game directly (must be configured first).
+
+### Manage Game Configuration
+
+```bash
+# Set Proton version
+gogdl manage -g <game_id> set-proton -v "<version>"
+
+# Set executable
+gogdl manage -g <game_id> set-executable -p "path/to/game.exe"
+
+# Add launch argument
+gogdl manage -g <game_id> add-arg -a "windowed"
+
+# Clear all launch arguments
+gogdl manage -g <game_id> clear-args
+
+# Add environment variable
+gogdl manage -g <game_id> add-env -k "VARIABLE" -v "value"
+
+# Clear all environment variables
+gogdl manage -g <game_id> clear-env
+```
+
+### Proton Management
+
+```bash
+# List available versions (paginated)
+gogdl proton -l
+gogdl proton -l -p 2  # Page 2
+
+# Download a specific version
+gogdl proton -d "GE-Proton9-20"
+
+# List installed versions
+gogdl proton -i
+
+# Remove an installed version
+gogdl proton -r "GE-Proton9-20"
+```
+
+---
+
+## Example Workflows
+
+### Interactive Workflow
 
 1. Login to GOG:
    ```bash
@@ -135,11 +210,37 @@ gogdl download -g <game_id> -v '<version>' -p <path>
    # Select game, choose Proton version if prompted, choose executable if prompted
    ```
 
-5. Manage configuration (if needed):
-   ```bash
-   gogdl manage
-   # Select game, adjust settings
-   ```
+### Scripted Workflow
+
+```bash
+#!/bin/bash
+
+# Download Proton
+gogdl proton -d "GE-Proton9-20"
+
+# Download a game (replace with actual game ID)
+gogdl download -g 1234567890
+
+# Configure the game
+gogdl manage -g 1234567890 set-proton -v "GE-Proton9-20"
+gogdl manage -g 1234567890 set-executable -p "Game.exe"
+gogdl manage -g 1234567890 add-env -k "DXVK_HUD" -v "fps"
+
+# Run the game
+gogdl run -g 1234567890
+```
+
+---
+
+## CLI Command Hints
+
+When using interactive mode, the tool displays the equivalent CLI command before performing each action. This helps you learn the CLI commands for future scripting:
+
+```
+💡 CLI equivalent: gogdl download -g 1234567890 -p "/home/user/.local/share/gogdl/games"
+```
+
+---
 
 ## Acknowledgements
 
