@@ -1,4 +1,4 @@
-use std::process::exit;
+use std::{process::exit, sync::Arc};
 
 use clap::Parser;
 use gogdl_lib::GogDl;
@@ -111,6 +111,53 @@ async fn main() -> Result<(), anyhow::Error> {
             if let (Some(gid), Some(act)) = (game_id, action.clone()) {
                 // Direct CLI mode
                 match act {
+                    ManageAction::DownloadFiles => {
+                        let auth = match secret::recover_token().await {
+                            Ok(auth) => auth,
+                            Err(err) => {
+                                eprintln!("Failed to recover token: {}, please login again", err);
+                                exit(1);
+                            }
+                        };
+                        let gogdl = GogDl::new(Some(auth));
+                        let gogdl_arc = Arc::new(gogdl);
+                        let (client_id, client_secret) = gogdl_arc.get_auth_ids(1423049311).await?;
+                        let remote_config = gogdl_arc.get_remote_config(&client_id).await?;
+                        if remote_config.is_supported() {
+                            let saves = gogdl_arc
+                                .get_save_file_list(&client_id, &client_secret)
+                                .await?;
+                            for save in saves {
+                                println!("\nSave: {:?}", save);
+
+                                let client_id_clone = client_id.clone();
+                                let client_secret_clone = client_secret.clone();
+                                let save_clone = save.clone();
+                                let gogdl_arc_clone = gogdl_arc.clone();
+                                let (tx, mut rx) =
+                                    tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
+                                tokio::spawn(async move {
+                                    let _ = gogdl_arc_clone
+                                        .download_save_file(
+                                            &save_clone,
+                                            &client_id_clone,
+                                            &client_secret_clone,
+                                            tx,
+                                        )
+                                        .await;
+                                });
+
+                                while let Some((downloaded, total)) = rx.recv().await {
+                                    print!(
+                                        "\rDownloaded: {} bytes / {} bytes -- {:.2}%",
+                                        downloaded,
+                                        total,
+                                        (downloaded as f64 / total as f64) * 100.0
+                                    );
+                                }
+                            }
+                        }
+                    }
                     ManageAction::GetFiles => {
                         let auth = match secret::recover_token().await {
                             Ok(auth) => auth,
@@ -119,10 +166,12 @@ async fn main() -> Result<(), anyhow::Error> {
                                 exit(1);
                             }
                         };
-                        let mut gogdl = GogDl::new(Some(auth));
+                        let gogdl = GogDl::new(Some(auth));
                         let (client_id, client_secret) = gogdl.get_auth_ids(1423049311).await?;
                         let saves = gogdl.get_save_file_list(&client_id, &client_secret).await?;
-                        println!("Saves: {}", saves);
+                        for save in saves {
+                            println!("Save: {:?}", save);
+                        }
                     }
                     ManageAction::SetProton { version } => {
                         commands::management::set_proton_version(&mut settings, gid, &version)

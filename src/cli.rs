@@ -127,4 +127,6 @@ pub enum ManageAction {
     ClearEnv,
 
     GetFiles,
+
+    DownloadFiles,
 }
