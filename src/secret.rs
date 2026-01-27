@@ -10,6 +10,10 @@ pub async fn store_token(auth: &Auth) -> Result<(), anyhow::Error> {
     let collection = ss.get_default_collection().await?;
     let string = serde_json::to_string(auth)?;
 
+    if collection.is_locked().await? {
+        collection.unlock().await?;
+    }
+
     collection
         .create_item(
             "gogdl-cli auth token",
