@@ -111,6 +111,19 @@ async fn main() -> Result<(), anyhow::Error> {
             if let (Some(gid), Some(act)) = (game_id, action.clone()) {
                 // Direct CLI mode
                 match act {
+                    ManageAction::GetFiles => {
+                        let auth = match secret::recover_token().await {
+                            Ok(auth) => auth,
+                            Err(err) => {
+                                eprintln!("Failed to recover token: {}, please login again", err);
+                                exit(1);
+                            }
+                        };
+                        let mut gogdl = GogDl::new(Some(auth));
+                        let (client_id, client_secret) = gogdl.get_auth_ids(1423049311).await?;
+                        let saves = gogdl.get_save_file_list(&client_id, &client_secret).await?;
+                        println!("Saves: {}", saves);
+                    }
                     ManageAction::SetProton { version } => {
                         commands::management::set_proton_version(&mut settings, gid, &version)
                             .await;

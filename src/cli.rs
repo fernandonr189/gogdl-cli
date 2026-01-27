@@ -125,4 +125,6 @@ pub enum ManageAction {
 
     /// Clear all environment variables
     ClearEnv,
+
+    GetFiles,
 }
