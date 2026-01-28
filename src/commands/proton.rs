@@ -455,15 +455,28 @@ async fn download_version(settings: &mut AppSettings, release: Release) {
 
     // Progress reporting
     let mut downloaded_size: i64 = 0;
+    let mut last_percent = 0;
     while let Some(size) = rx.recv().await {
         downloaded_size += size;
-        print!(
-            "\rDownloaded: {} MB/{} MB -- {:.2}%",
-            downloaded_size / 1024 / 1024,
-            total_size / 1024 / 1024,
-            downloaded_size as f64 / total_size as f64 * 100.0
-        );
-        let _ = std::io::stdout().flush();
+        let percent = ((downloaded_size as f64 / total_size as f64) * 100.0) as i32;
+
+        // Only update display when percentage changes
+        if percent != last_percent {
+            let downloaded_mb = downloaded_size / 1024 / 1024;
+            let total_mb = total_size / 1024 / 1024;
+
+            print!(
+                "\r{} [{:50}] {:.1}%  ({} MB / {} MB)",
+                style("Progress:").green(),
+                "=".repeat((percent as usize) / 2),
+                percent as f64,
+                downloaded_mb,
+                total_mb
+            );
+
+            let _ = std::io::stdout().flush();
+            last_percent = percent;
+        }
     }
 
     println!(); // New line after progress
@@ -505,15 +518,28 @@ async fn download_version_cli(settings: &mut AppSettings, release: Release) {
 
     // Progress reporting
     let mut downloaded_size: i64 = 0;
+    let mut last_percent = 0;
     while let Some(size) = rx.recv().await {
         downloaded_size += size;
-        print!(
-            "\rDownloaded: {} MB/{} MB -- {:.2}%",
-            downloaded_size / 1024 / 1024,
-            total_size / 1024 / 1024,
-            downloaded_size as f64 / total_size as f64 * 100.0
-        );
-        let _ = std::io::stdout().flush();
+        let percent = ((downloaded_size as f64 / total_size as f64) * 100.0) as i32;
+
+        // Only update display when percentage changes
+        if percent != last_percent {
+            let downloaded_mb = downloaded_size / 1024 / 1024;
+            let total_mb = total_size / 1024 / 1024;
+
+            print!(
+                "\r{} [{:50}] {:.1}%  ({} MB / {} MB)",
+                style("Progress:").green(),
+                "=".repeat((percent as usize) / 2),
+                percent as f64,
+                downloaded_mb,
+                total_mb
+            );
+
+            let _ = std::io::stdout().flush();
+            last_percent = percent;
+        }
     }
 
     println!(); // New line after progress

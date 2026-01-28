@@ -735,11 +735,17 @@ pub async fn download_save_files_for_game(settings: &mut AppSettings, game_id: i
 
             // Update progress bar (only print when percentage changes)
             if percent != last_percent {
+                // Format bytes in a human-readable way
+                let downloaded_str = format_bytes(downloaded);
+                let total_str = format_bytes(total);
+
                 print!(
-                    "\r{} [{:50}] {:.1}%",
+                    "\r{} [{:50}] {:.1}%  ({} / {})",
                     style("Progress:").green(),
                     "=".repeat((percent as usize) / 2),
-                    percent as f64
+                    percent as f64,
+                    downloaded_str,
+                    total_str
                 );
                 last_percent = percent;
             }
@@ -764,6 +770,19 @@ pub async fn download_save_files_for_game(settings: &mut AppSettings, game_id: i
         style("All save files downloaded successfully!").green()
     );
     Ok(())
+}
+
+/// Formats bytes into a human-readable string (B, KB, MB, GB)
+fn format_bytes(bytes: i64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
 }
 
 /// Public function to handle the CLI download-save-files command
