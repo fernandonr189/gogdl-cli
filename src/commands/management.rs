@@ -1,12 +1,17 @@
-use std::process::exit;
+use std::{path::PathBuf, process::exit, sync::Arc};
 
+use anyhow::Result;
 use console::style;
 use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
+use gogdl_lib::GogDl;
 
 use crate::hint;
+use crate::secret;
 use crate::settings::{AppSettings, DownloadedGame, DownloadedProtonVersion};
 
 pub async fn handle_manage(settings: &mut AppSettings) {
+    use crate::hint;
+
     if settings.downloaded_games.is_empty() {
         println!(
             "{}",
@@ -46,6 +51,10 @@ pub async fn handle_manage(settings: &mut AppSettings) {
         match selection {
             Ok(Some(idx)) if idx < settings.downloaded_games.len() => {
                 let game_id = settings.downloaded_games[idx].game_id;
+
+                // Show CLI hint
+                hint::print_command_hint(&format!("gogdl manage -g {}", game_id));
+
                 manage_game(settings, game_id).await;
             }
             Ok(Some(_)) | Ok(None) | Err(_) => {
@@ -131,11 +140,12 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32) {
             "Clear launch arguments",
             "Add environment variable",
             "Clear environment variables",
+            "Download cloud saves",
             "← Back",
         ];
 
         let action = FuzzySelect::with_theme(&ColorfulTheme::default())
-            .with_prompt("What would you like to configure?")
+            .with_prompt("Select action")
             .items(&options)
             .default(0)
             .interact_opt();
@@ -147,8 +157,13 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32) {
             Ok(Some(3)) => clear_args(settings, game_id).await,
             Ok(Some(4)) => add_env_interactive(settings, game_id).await,
             Ok(Some(5)) => clear_env_vars(settings, game_id).await,
-            Ok(Some(6)) | Ok(None) | Err(_) => break,
-            _ => {}
+            Ok(Some(6)) => {
+                // Handle Download cloud saves
+                if let Err(e) = download_save_files_for_game(settings, game_id).await {
+                    println!("{}", style(format!("Error: {}", e)).red());
+                }
+            }
+            _ => break,
         }
     }
 }
@@ -567,6 +582,193 @@ pub async fn set_arg(settings: &mut AppSettings, game_id: i32, arg: &str) {
 
     game.args.push(new_arg);
     let _ = settings.save().await;
+}
+
+/// Downloads save files for a specific game
+pub async fn download_save_files_for_game(settings: &mut AppSettings, game_id: i32) -> Result<()> {
+    // 1. Get authentication
+    let auth = match secret::recover_token().await {
+        Ok(auth) => auth,
+        Err(err) => {
+            return Err(anyhow::anyhow!(
+                "Failed to recover token: {}, please login again",
+                err
+            ));
+        }
+    };
+
+    // 2. Find the game in settings
+    let game = match settings
+        .downloaded_games
+        .iter()
+        .find(|g| g.game_id == game_id)
+    {
+        Some(game) => game,
+        None => {
+            return Err(anyhow::anyhow!("Game not found in downloaded games"));
+        }
+    };
+
+    // 3. Initialize GOG client
+    println!("{}", style("Connecting to GOG...").blue());
+    let gogdl = GogDl::new(Some(auth));
+    let gogdl_arc = Arc::new(gogdl);
+
+    // 4. Get authentication IDs for the game
+    println!("{}", style("Getting game authentication details...").blue());
+    let (client_id, client_secret) = gogdl_arc.get_auth_ids(game_id).await?;
+
+    // 5. Get remote configuration to determine save path
+    println!("{}", style("Checking cloud save support...").blue());
+    let remote_config = gogdl_arc.get_remote_config(&client_id).await?;
+
+    if !remote_config.is_supported() {
+        println!(
+            "{}",
+            style("Cloud saves are not supported for this game!").yellow()
+        );
+        return Ok(());
+    }
+
+    // 6. Determine the save file path
+    println!("{}", style("Determining save file location...").blue());
+    let (mut mapped, rest) = remote_config.get_path()?;
+
+    let mut parent_path = PathBuf::new();
+    if mapped == "INSTALLATION_PATH" {
+        mapped = game.path.clone();
+        parent_path.push(mapped);
+        parent_path.push(rest);
+    } else {
+        // Handle the Wine/Proton prefix path
+        let prefix_path = if let Some(path) = &game.prefix_path {
+            path.clone()
+        } else {
+            return Err(anyhow::anyhow!("Game prefix path not found"));
+        };
+
+        parent_path.push(prefix_path);
+        parent_path.push("pfx");
+        parent_path.push("drive_c");
+        parent_path.push("users");
+        parent_path.push("steamuser");
+        parent_path.push(mapped);
+        parent_path.push(rest);
+    }
+
+    // Create directory if it doesn't exist
+    tokio::fs::create_dir_all(&parent_path).await?;
+
+    println!(
+        "{}",
+        style(format!(
+            "Save files will be stored in: {}",
+            parent_path.display()
+        ))
+        .dim()
+    );
+
+    // 7. Get list of save files
+    println!("{}", style("Fetching available save files...").blue());
+    let saves = gogdl_arc
+        .get_save_file_list(&client_id, &client_secret)
+        .await?;
+
+    if saves.is_empty() {
+        println!(
+            "{}",
+            style("No save files found in the cloud for this game.").yellow()
+        );
+        return Ok(());
+    }
+
+    println!(
+        "{}",
+        style(format!("Found {} save file(s)", saves.len())).green()
+    );
+
+    // 8. Download each save file
+    for (i, save) in saves.iter().enumerate() {
+        println!(
+            "{}",
+            style(format!(
+                "Downloading save file {}/{}: {}",
+                i + 1,
+                saves.len(),
+                save.get_path()
+            ))
+            .blue()
+        );
+
+        let mut file_path = parent_path.clone();
+        file_path.push(save.get_path());
+
+        // Create parent directories for the save file
+        if let Some(parent) = file_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        // Set up progress channel
+        let client_id_clone = client_id.clone();
+        let client_secret_clone = client_secret.clone();
+        let save_clone = save.clone();
+        let gogdl_arc_clone = gogdl_arc.clone();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
+
+        // Download the save file in a separate task to allow showing progress
+        let download_task = tokio::spawn(async move {
+            gogdl_arc_clone
+                .download_save_file(
+                    &save_clone,
+                    &client_id_clone,
+                    &client_secret_clone,
+                    tx,
+                    &file_path,
+                )
+                .await
+        });
+
+        // Display progress
+        let mut last_percent = 0;
+        while let Some((downloaded, total)) = rx.recv().await {
+            let percent = ((downloaded as f64 / total as f64) * 100.0) as i32;
+
+            // Update progress bar (only print when percentage changes)
+            if percent != last_percent {
+                print!(
+                    "\r{} [{:50}] {:.1}%",
+                    style("Progress:").green(),
+                    "=".repeat((percent as usize) / 2),
+                    percent as f64
+                );
+                last_percent = percent;
+            }
+        }
+        println!(); // New line after progress bar
+
+        // Check if download succeeded
+        match download_task.await {
+            Ok(result) => match result {
+                Ok(_) => println!("{}", style("✓ Save file downloaded successfully").green()),
+                Err(e) => println!(
+                    "{}",
+                    style(format!("× Failed to download save file: {}", e)).red()
+                ),
+            },
+            Err(e) => println!("{}", style(format!("× Download task failed: {}", e)).red()),
+        }
+    }
+
+    println!(
+        "{}",
+        style("All save files downloaded successfully!").green()
+    );
+    Ok(())
+}
+
+/// Public function to handle the CLI download-save-files command
+pub async fn download_save_files_cli(settings: &mut AppSettings, game_id: i32) -> Result<()> {
+    download_save_files_for_game(settings, game_id).await
 }
 
 pub async fn set_env(settings: &mut AppSettings, game_id: i32, key: &str, value: &str) {

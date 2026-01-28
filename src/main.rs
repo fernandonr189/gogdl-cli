@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::exit, sync::Arc};
+use std::process::exit;
 
 use clap::Parser;
 use gogdl_lib::GogDl;
@@ -6,7 +6,10 @@ use gogdl_lib::GogDl;
 use crate::{
     cli::ManageAction,
     commands::{
-        games::handle_games, management::handle_manage, proton::handle_proton, runner::handle_run,
+        games::handle_games,
+        management::{download_save_files_cli, handle_manage},
+        proton::handle_proton,
+        runner::handle_run,
     },
     settings::AppSettings,
 };
@@ -112,92 +115,9 @@ async fn main() -> Result<(), anyhow::Error> {
                 // Direct CLI mode
                 match act {
                     ManageAction::DownloadSaveFiles => {
-                        let auth = match secret::recover_token().await {
-                            Ok(auth) => auth,
-                            Err(err) => {
-                                eprintln!("Failed to recover token: {}, please login again", err);
-                                exit(1);
-                            }
-                        };
-                        let gogdl = GogDl::new(Some(auth));
-                        let gogdl_arc = Arc::new(gogdl);
-                        let (client_id, client_secret) = gogdl_arc.get_auth_ids(1771973390).await?;
-                        let remote_config = gogdl_arc.get_remote_config(&client_id).await?;
-
-                        if remote_config.is_supported() {
-                            let (mut mapped, rest) = remote_config.get_path()?;
-                            println!("Remote config: {:?}", remote_config.get_path());
-
-                            let game = if let Some(game) = settings
-                                .downloaded_games
-                                .iter()
-                                .find(|game| game.game_id == 1771973390)
-                            {
-                                game
-                            } else {
-                                panic!("Game not found");
-                            };
-
-                            let mut parent_path = PathBuf::new();
-                            if mapped == "INSTALLATION_PATH" {
-                                mapped = game.path.clone();
-                                parent_path.push(mapped);
-                                parent_path.push(rest);
-                            } else {
-                                let prefix_path = if let Some(path) = &game.prefix_path {
-                                    path.clone()
-                                } else {
-                                    panic!("Prefix path not found");
-                                };
-                                println!("path: {}", prefix_path);
-
-                                parent_path.push(prefix_path);
-                                parent_path.push("pfx");
-                                parent_path.push("drive_c");
-                                parent_path.push("users");
-                                parent_path.push("steamuser");
-                                parent_path.push(mapped);
-                                parent_path.push(rest);
-                            }
-
-                            let saves = gogdl_arc
-                                .get_save_file_list(&client_id, &client_secret)
-                                .await?;
-                            for save in saves {
-                                println!("\n\nSave: {:?}", save);
-                                let mut file_path = parent_path.clone();
-                                file_path.push(save.get_path());
-
-                                let client_id_clone = client_id.clone();
-                                let client_secret_clone = client_secret.clone();
-                                let save_clone = save.clone();
-                                let gogdl_arc_clone = gogdl_arc.clone();
-                                let (tx, mut rx) =
-                                    tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
-                                println!("File path: {:?}", file_path);
-                                tokio::spawn(async move {
-                                    let _ = gogdl_arc_clone
-                                        .download_save_file(
-                                            &save_clone,
-                                            &client_id_clone,
-                                            &client_secret_clone,
-                                            tx,
-                                            &file_path,
-                                        )
-                                        .await;
-                                });
-
-                                while let Some((downloaded, total)) = rx.recv().await {
-                                    print!(
-                                        "\rDownloaded: {} bytes / {} bytes -- {:.2}%",
-                                        downloaded,
-                                        total,
-                                        (downloaded as f64 / total as f64) * 100.0
-                                    );
-                                }
-                            }
-                        } else {
-                            println!("Cloud saves are not supported for this game!")
+                        if let Err(e) = download_save_files_cli(&mut settings, gid).await {
+                            eprintln!("Error downloading save files: {}", e);
+                            exit(1);
                         }
                     }
                     ManageAction::SetProton { version } => {

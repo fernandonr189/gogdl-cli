@@ -59,6 +59,11 @@ pub fn manage_clear_env_command(game_id: i32) -> String {
     format!("gogdl manage -g {} clear-env", game_id)
 }
 
+/// Build a CLI command string for downloading save files
+pub fn manage_download_save_files_command(game_id: i32) -> String {
+    format!("gogdl manage -g {} download-save-files", game_id)
+}
+
 /// Build a CLI command string for listing games
 pub fn games_list_command() -> String {
     "gogdl games -l".to_string()

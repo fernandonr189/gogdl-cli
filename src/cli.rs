@@ -126,5 +126,7 @@ pub enum ManageAction {
     /// Clear all environment variables
     ClearEnv,
 
+    /// Download cloud save files for a game
+    #[command(name = "download-save-files")]
     DownloadSaveFiles,
 }
