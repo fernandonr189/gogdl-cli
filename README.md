@@ -6,7 +6,7 @@ This is a command-line tool for downloading and running games from GOG. It provi
 
 I started this project because I don't like the idea of too many Electron-based apps on my system. I really like Heroic Games Launcher and love playing on Linux, so I decided to build my own tool in Rust.
 
-The tool is now functional for downloading, configuring, and running games. It features an interactive CLI that makes it easy to browse your library, manage game settings, and launch games - while also providing direct CLI commands for scripting.
+The tool is now functional for downloading, configuring, running games, and managing cloud saves. It features an interactive CLI that makes it easy to browse your library, manage game settings, launch games, and download cloud saves - while also providing direct CLI commands for scripting.
 
 ## Features
 
@@ -16,6 +16,7 @@ The tool is now functional for downloading, configuring, and running games. It f
 - 🍷 Automatic Proton/Wine prefix management
 - ⚙️ Configure game settings (executable, launch args, environment variables)
 - 🚀 Run games with automatic setup prompts
+- ☁️ Download cloud save files for games that support them
 - 💡 CLI command hints shown during interactive use (for learning scripting commands)
 
 ## Installation
@@ -89,6 +90,7 @@ This opens an interactive menu where you can:
 - Add launch arguments
 - Add environment variables
 - Clear arguments or environment variables
+- Download cloud save files (for games that support cloud saves)
 
 ### Proton Management
 
@@ -159,6 +161,9 @@ gogdl manage -g <game_id> add-env -k "VARIABLE" -v "value"
 
 # Clear all environment variables
 gogdl manage -g <game_id> clear-env
+
+# Download cloud save files
+gogdl manage -g <game_id> download-save-files
 ```
 
 ### Proton Management
@@ -223,8 +228,11 @@ gogdl download -g 1234567890
 
 # Configure the game
 gogdl manage -g 1234567890 set-proton -v "GE-Proton9-20"
-gogdl manage -g 1234567890 set-executable -p "Game.exe"
+gogdl manage -g 1234567890 set-executable -p "Game.exe" 
 gogdl manage -g 1234567890 add-env -k "DXVK_HUD" -v "fps"
+
+# Download cloud saves if the game supports them
+gogdl manage -g 1234567890 download-save-files
 
 # Run the game
 gogdl run -g 1234567890
