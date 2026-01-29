@@ -12,32 +12,21 @@ pub async fn handle_download_for_game(
     path: &str,
     settings: &mut AppSettings,
     fix: bool,
+    gogdl: Arc<GogDl>,
 ) -> Result<(), anyhow::Error> {
-    // We need to create a new GogDl instance with the same auth to wrap in Arc
-    // This is a workaround since we can't clone GogDl or move a reference into Arc
-    let auth = match secret::recover_token().await {
-        Ok(auth) => auth,
-        Err(err) => {
-            eprintln!("Failed to recover token: {}, please login again", err);
-            exit(1);
-        }
-    };
-    let gogdl_arc = Arc::new(GogDl::new(Some(auth)));
-
-    handle_download_internal(gogdl_arc, game_id, version_id, path, settings, fix).await
+    handle_download_internal(gogdl, game_id, version_id, path, settings, fix).await
 }
 
 /// Handle download from CLI command (takes owned GogDl)
 pub async fn handle_download(
-    gogdl: GogDl,
+    gogdl: Arc<GogDl>,
     game_id: i32,
     version_id: Option<String>,
     path: &str,
     settings: &mut AppSettings,
     fix: bool,
 ) -> Result<(), anyhow::Error> {
-    let gogdl_arc = Arc::new(gogdl);
-    handle_download_internal(gogdl_arc, game_id, version_id, path, settings, fix).await
+    handle_download_internal(gogdl, game_id, version_id, path, settings, fix).await
 }
 
 /// Internal download handler that uses Arc<GogDl> for proper progress reporting

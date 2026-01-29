@@ -6,10 +6,9 @@ use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
 use gogdl_lib::GogDl;
 
 use crate::hint;
-use crate::secret;
 use crate::settings::{AppSettings, DownloadedGame, DownloadedProtonVersion};
 
-pub async fn handle_manage(settings: &mut AppSettings) {
+pub async fn handle_manage(settings: &mut AppSettings, gogdl: Arc<GogDl>) {
     use crate::hint;
 
     if settings.downloaded_games.is_empty() {
@@ -55,7 +54,7 @@ pub async fn handle_manage(settings: &mut AppSettings) {
                 // Show CLI hint
                 hint::print_command_hint(&format!("gogdl manage -g {}", game_id));
 
-                manage_game(settings, game_id).await;
+                manage_game(settings, game_id, gogdl.clone()).await;
             }
             Ok(Some(_)) | Ok(None) | Err(_) => {
                 println!("{}", style("Goodbye!").green());
@@ -83,7 +82,7 @@ fn get_game_status(game: &DownloadedGame) -> String {
     format!("[{}]", status_parts.join(", "))
 }
 
-async fn manage_game(settings: &mut AppSettings, game_id: i32) {
+async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>) {
     loop {
         let game = match settings
             .downloaded_games
@@ -159,7 +158,8 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32) {
             Ok(Some(5)) => clear_env_vars(settings, game_id).await,
             Ok(Some(6)) => {
                 // Handle Download cloud saves
-                if let Err(e) = download_save_files_for_game(settings, game_id).await {
+                if let Err(e) = download_save_files_for_game(settings, game_id, gogdl.clone()).await
+                {
                     println!("{}", style(format!("Error: {}", e)).red());
                 }
             }
@@ -585,18 +585,11 @@ pub async fn set_arg(settings: &mut AppSettings, game_id: i32, arg: &str) {
 }
 
 /// Downloads save files for a specific game
-pub async fn download_save_files_for_game(settings: &mut AppSettings, game_id: i32) -> Result<()> {
-    // 1. Get authentication
-    let auth = match secret::recover_token().await {
-        Ok(auth) => auth,
-        Err(err) => {
-            return Err(anyhow::anyhow!(
-                "Failed to recover token: {}, please login again",
-                err
-            ));
-        }
-    };
-
+pub async fn download_save_files_for_game(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+) -> Result<()> {
     // 2. Find the game in settings
     let game = match settings
         .downloaded_games
@@ -611,16 +604,14 @@ pub async fn download_save_files_for_game(settings: &mut AppSettings, game_id: i
 
     // 3. Initialize GOG client
     println!("{}", style("Connecting to GOG...").blue());
-    let gogdl = GogDl::new(Some(auth));
-    let gogdl_arc = Arc::new(gogdl);
 
     // 4. Get authentication IDs for the game
     println!("{}", style("Getting game authentication details...").blue());
-    let (client_id, client_secret) = gogdl_arc.get_auth_ids(game_id).await?;
+    let (client_id, client_secret) = gogdl.get_auth_ids(game_id).await?;
 
     // 5. Get remote configuration to determine save path
     println!("{}", style("Checking cloud save support...").blue());
-    let remote_config = gogdl_arc.get_remote_config(&client_id).await?;
+    let remote_config = gogdl.get_remote_config(&client_id).await?;
 
     if !remote_config.is_supported() {
         println!(
@@ -670,9 +661,7 @@ pub async fn download_save_files_for_game(settings: &mut AppSettings, game_id: i
 
     // 7. Get list of save files
     println!("{}", style("Fetching available save files...").blue());
-    let saves = gogdl_arc
-        .get_save_file_list(&client_id, &client_secret)
-        .await?;
+    let saves = gogdl.get_save_file_list(&client_id, &client_secret).await?;
 
     if saves.is_empty() {
         println!(
@@ -712,12 +701,12 @@ pub async fn download_save_files_for_game(settings: &mut AppSettings, game_id: i
         let client_id_clone = client_id.clone();
         let client_secret_clone = client_secret.clone();
         let save_clone = save.clone();
-        let gogdl_arc_clone = gogdl_arc.clone();
+        let gogdl_clone = gogdl.clone();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
 
         // Download the save file in a separate task to allow showing progress
         let download_task = tokio::spawn(async move {
-            gogdl_arc_clone
+            gogdl_clone
                 .download_save_file(
                     &save_clone,
                     &client_id_clone,
@@ -786,8 +775,12 @@ fn format_bytes(bytes: i64) -> String {
 }
 
 /// Public function to handle the CLI download-save-files command
-pub async fn download_save_files_cli(settings: &mut AppSettings, game_id: i32) -> Result<()> {
-    download_save_files_for_game(settings, game_id).await
+pub async fn download_save_files_cli(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+) -> Result<()> {
+    download_save_files_for_game(settings, game_id, gogdl).await
 }
 
 pub async fn set_env(settings: &mut AppSettings, game_id: i32, key: &str, value: &str) {

@@ -1,4 +1,4 @@
-use std::process::exit;
+use std::{process::exit, sync::Arc};
 
 use clap::Parser;
 use gogdl_lib::GogDl;
@@ -26,9 +26,11 @@ async fn main() -> Result<(), anyhow::Error> {
 
     let mut settings = AppSettings::load().await?;
 
+    let gogdl = Arc::new(GogDl::new(None));
+
     match args.command {
         cli::Commands::Login { code, login_code } => {
-            commands::login::handle_login(code, login_code).await;
+            commands::login::handle_login(code, login_code, gogdl).await;
         }
         cli::Commands::Download {
             game_id,
@@ -56,7 +58,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 "games"
             );
 
-            let gogdl = GogDl::new(Some(auth));
+            gogdl.set_auth(Some(auth)).await;
 
             commands::download::handle_download(
                 gogdl,
@@ -76,14 +78,14 @@ async fn main() -> Result<(), anyhow::Error> {
                     exit(1);
                 }
             };
-            let gogdl = GogDl::new(Some(auth));
+            gogdl.set_auth(Some(auth)).await;
 
             if list {
                 // Direct CLI mode: just list games
-                commands::games::list_games_cli(&gogdl).await;
+                commands::games::list_games_cli(gogdl).await;
             } else {
                 // Interactive mode
-                handle_games(&gogdl, &mut settings).await;
+                handle_games(gogdl, &mut settings).await;
             }
         }
         cli::Commands::Proton {
@@ -115,7 +117,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 // Direct CLI mode
                 match act {
                     ManageAction::DownloadSaveFiles => {
-                        if let Err(e) = download_save_files_cli(&mut settings, gid).await {
+                        if let Err(e) = download_save_files_cli(&mut settings, gid, gogdl).await {
                             eprintln!("Error downloading save files: {}", e);
                             exit(1);
                         }
@@ -146,7 +148,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 exit(1);
             } else {
                 // Interactive mode
-                handle_manage(&mut settings).await;
+                handle_manage(&mut settings, gogdl).await;
             }
         }
         cli::Commands::Run { game_id } => {

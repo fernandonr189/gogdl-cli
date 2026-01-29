@@ -1,4 +1,4 @@
-use std::process::exit;
+use std::{process::exit, sync::Arc};
 
 use console::style;
 use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
@@ -7,8 +7,8 @@ use gogdl_lib::{GogDl, GogdlError, client::ClientError, games::GameDetails};
 use crate::{hint, secret, settings::AppSettings};
 
 /// Interactive games browser
-pub async fn handle_games(gogdl: &GogDl, settings: &mut AppSettings) {
-    let games = match fetch_games(gogdl).await {
+pub async fn handle_games(gogdl: Arc<GogDl>, settings: &mut AppSettings) {
+    let games = match fetch_games(gogdl.clone()).await {
         Ok(games) => games,
         Err(err) => {
             handle_error(err, gogdl).await;
@@ -57,7 +57,7 @@ pub async fn handle_games(gogdl: &GogDl, settings: &mut AppSettings) {
         match selection {
             Ok(Some(idx)) if idx < games.len() => {
                 let selected_game = &games[idx];
-                handle_game_selection(selected_game, settings).await;
+                handle_game_selection(selected_game, settings, gogdl.clone()).await;
             }
             Ok(Some(_)) | Ok(None) | Err(_) => {
                 println!("{}", style("Goodbye!").green());
@@ -68,8 +68,8 @@ pub async fn handle_games(gogdl: &GogDl, settings: &mut AppSettings) {
 }
 
 /// CLI mode: list all owned games
-pub async fn list_games_cli(gogdl: &GogDl) {
-    let games = match fetch_games(gogdl).await {
+pub async fn list_games_cli(gogdl: Arc<GogDl>) {
+    let games = match fetch_games(gogdl.clone()).await {
         Ok(games) => games,
         Err(err) => {
             handle_error(err, gogdl).await;
@@ -94,7 +94,7 @@ pub async fn list_games_cli(gogdl: &GogDl) {
     println!("{}", style(format!("Total: {} game(s)", games.len())).dim());
 }
 
-async fn handle_game_selection(game: &GameDetails, settings: &mut AppSettings) {
+async fn handle_game_selection(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc<GogDl>) {
     let is_installed = settings
         .downloaded_games
         .iter()
@@ -119,13 +119,13 @@ async fn handle_game_selection(game: &GameDetails, settings: &mut AppSettings) {
 
     match action {
         Ok(Some(0)) => {
-            install_game(game, settings).await;
+            install_game(game, settings, gogdl).await;
         }
         _ => {}
     }
 }
 
-async fn install_game(game: &GameDetails, settings: &mut AppSettings) {
+async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc<GogDl>) {
     println!();
     println!("{}", style(format!("Installing: {}", game.title)).cyan());
 
@@ -171,6 +171,7 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings) {
         &download_path,
         settings,
         false,
+        gogdl,
     )
     .await
     {
@@ -188,11 +189,11 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings) {
     }
 }
 
-async fn fetch_games(gogdl: &GogDl) -> Result<Vec<GameDetails>, GogdlError> {
+async fn fetch_games(gogdl: Arc<GogDl>) -> Result<Vec<GameDetails>, GogdlError> {
     gogdl.get_owned_games().await
 }
 
-async fn handle_error(err: GogdlError, gogdl: &GogDl) {
+async fn handle_error(err: GogdlError, gogdl: Arc<GogDl>) {
     match err {
         GogdlError::ClientError(ClientError::Http { status, body }) => {
             if status.as_u16() == 401 {

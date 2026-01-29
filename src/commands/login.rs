@@ -1,13 +1,12 @@
-use std::process::exit;
+use std::{process::exit, sync::Arc};
 
 use gogdl_lib::GogDl;
 
 use crate::secret::store_token;
 
-pub async fn handle_login(login: bool, code: Option<String>) {
+pub async fn handle_login(login: bool, code: Option<String>, gogdl: Arc<GogDl>) {
     if login {
         if let Some(code) = code {
-            let gogdl = GogDl::new(None);
             let token = match gogdl.get_login_tokens(&code).await {
                 Ok(token) => token,
                 Err(err) => {
