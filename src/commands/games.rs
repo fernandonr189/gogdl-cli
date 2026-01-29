@@ -64,6 +64,7 @@ pub async fn handle_games(gogdl: Arc<GogDl>, settings: &mut AppSettings) {
                 break;
             }
         }
+        break;
     }
 }
 

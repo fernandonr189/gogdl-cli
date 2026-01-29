@@ -129,4 +129,8 @@ pub enum ManageAction {
     /// Download cloud save files for a game
     #[command(name = "download-save-files")]
     DownloadSaveFiles,
+
+    /// Upload cloud save files for a game
+    #[command(name = "upload-save-files")]
+    UploadSaveFiles,
 }

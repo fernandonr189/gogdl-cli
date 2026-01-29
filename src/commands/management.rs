@@ -4,9 +4,10 @@ use anyhow::Result;
 use console::style;
 use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
 use gogdl_lib::GogDl;
+use walkdir::WalkDir;
 
-use crate::hint;
 use crate::settings::{AppSettings, DownloadedGame, DownloadedProtonVersion};
+use crate::{hint, secret};
 
 pub async fn handle_manage(settings: &mut AppSettings, gogdl: Arc<GogDl>) {
     use crate::hint;
@@ -140,6 +141,7 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>
             "Add environment variable",
             "Clear environment variables",
             "Download cloud saves",
+            "Upload cloud saves",
             "← Back",
         ];
 
@@ -157,9 +159,31 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>
             Ok(Some(4)) => add_env_interactive(settings, game_id).await,
             Ok(Some(5)) => clear_env_vars(settings, game_id).await,
             Ok(Some(6)) => {
+                let auth = match secret::recover_token().await {
+                    Ok(auth) => auth,
+                    Err(err) => {
+                        eprintln!("Failed to recover token: {}, please login again", err);
+                        exit(1);
+                    }
+                };
+                gogdl.set_auth(Some(auth)).await;
                 // Handle Download cloud saves
                 if let Err(e) = download_save_files_for_game(settings, game_id, gogdl.clone()).await
                 {
+                    println!("{}", style(format!("Error: {}", e)).red());
+                }
+            }
+            Ok(Some(7)) => {
+                let auth = match secret::recover_token().await {
+                    Ok(auth) => auth,
+                    Err(err) => {
+                        eprintln!("Failed to recover token: {}, please login again", err);
+                        exit(1);
+                    }
+                };
+                gogdl.set_auth(Some(auth)).await;
+                // Handle Upload cloud saves
+                if let Err(e) = upload_save_files_for_game(settings, game_id, gogdl.clone()).await {
                     println!("{}", style(format!("Error: {}", e)).red());
                 }
             }
@@ -584,6 +608,186 @@ pub async fn set_arg(settings: &mut AppSettings, game_id: i32, arg: &str) {
     let _ = settings.save().await;
 }
 
+/// Uploads save files for a game
+pub async fn upload_save_files_for_game(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+) -> Result<()> {
+    // 1. Find the game in settings
+    let game = match settings
+        .downloaded_games
+        .iter()
+        .find(|g| g.game_id == game_id)
+    {
+        Some(game) => game,
+        None => {
+            return Err(anyhow::anyhow!("Game not found in downloaded games"));
+        }
+    };
+
+    // 2. Get authentication details
+    println!("{}", style("Getting game authentication details...").blue());
+    let (client_id, client_secret) = gogdl.get_auth_ids(game_id).await?;
+
+    // 3. Check cloud save support
+    println!("{}", style("Checking cloud save support...").blue());
+    let remote_config = gogdl.get_remote_config(&client_id).await?;
+
+    if !remote_config.is_supported() {
+        println!(
+            "{}",
+            style("Cloud saves are not supported for this game!").yellow()
+        );
+        return Ok(());
+    }
+
+    // 4. Determine save file location
+    println!("{}", style("Determining save file location...").blue());
+
+    let (mut mapped, rest) = remote_config.get_path()?;
+
+    let mut parent_path = PathBuf::new();
+    if mapped == "INSTALLATION_PATH" {
+        mapped = game.path.clone();
+        parent_path.push(mapped);
+        parent_path.push(rest);
+    } else {
+        // Handle the Wine/Proton prefix path
+        let prefix_path = if let Some(path) = &game.prefix_path {
+            path.clone()
+        } else {
+            return Err(anyhow::anyhow!("Game prefix path not found"));
+        };
+
+        parent_path.push(prefix_path);
+        parent_path.push("pfx");
+        parent_path.push("drive_c");
+        parent_path.push("users");
+        parent_path.push("steamuser");
+        parent_path.push(mapped);
+        parent_path.push(rest);
+    }
+
+    println!(
+        "{}",
+        style(format!("Saves path: {}", parent_path.display())).blue()
+    );
+
+    // 5. Count files to upload
+    let files_to_upload: Vec<_> = WalkDir::new(parent_path.clone())
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .collect();
+
+    if files_to_upload.is_empty() {
+        println!(
+            "{}",
+            style("No save files found in the directory!").yellow()
+        );
+        return Ok(());
+    }
+
+    println!(
+        "{}",
+        style(format!("Found {} files to upload", files_to_upload.len())).blue()
+    );
+
+    // 6. Upload each file
+    for (i, file_entry) in files_to_upload.iter().enumerate() {
+        let full_path = file_entry.path();
+
+        let relative_path = match full_path.strip_prefix(&parent_path) {
+            Ok(path) => path,
+            Err(_) => {
+                println!(
+                    "{}",
+                    style(format!("Failed to get relative path for {:?}", full_path)).red()
+                );
+                continue;
+            }
+        };
+
+        let url_path = relative_path
+            .components()
+            .map(|c: std::path::Component| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+
+        println!(
+            "{}",
+            style(format!(
+                "Uploading file {}/{}: {}",
+                i + 1,
+                files_to_upload.len(),
+                url_path
+            ))
+            .blue()
+        );
+
+        // Set up progress channel
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
+
+        let client_id_clone = client_id.clone();
+        let client_secret_clone = client_secret.clone();
+        let full_path_clone = full_path.to_path_buf();
+        let gogdl_clone = gogdl.clone();
+
+        // Upload in a separate task to allow showing progress
+        let upload_task = tokio::spawn(async move {
+            gogdl_clone
+                .upload_save_file(
+                    &client_id_clone,
+                    &client_secret_clone,
+                    tx,
+                    &full_path_clone,
+                    &url_path,
+                )
+                .await
+        });
+
+        // Display progress
+        while let Some((sent, total)) = rx.recv().await {
+            let percent = if total > 0 {
+                ((sent as f64 / total as f64) * 100.0) as f32
+            } else {
+                0.0
+            };
+
+            // Update progress bar (only print when percentage changes)
+            // Format bytes in a human-readable way
+            let sent_str = format_bytes(sent);
+            let total_str = format_bytes(total);
+
+            print!(
+                "\r{} [{:50}] {:.1}%  ({} / {})",
+                style("Progress:").green(),
+                "=".repeat((percent as usize) / 2),
+                percent as f64,
+                sent_str,
+                total_str
+            );
+        }
+        println!(); // New line after progress bar
+
+        // Check if upload succeeded
+        match upload_task.await {
+            Ok(result) => match result {
+                Ok(_) => println!("{}", style("✓ Save file uploaded successfully").green()),
+                Err(e) => println!(
+                    "{}",
+                    style(format!("× Failed to upload save file: {}", e)).red()
+                ),
+            },
+            Err(e) => println!("{}", style(format!("× Upload task failed: {}", e)).red()),
+        }
+    }
+
+    println!("{}", style("All save files uploaded successfully!").green());
+    Ok(())
+}
+
 /// Downloads save files for a specific game
 pub async fn download_save_files_for_game(
     settings: &mut AppSettings,
@@ -772,6 +976,15 @@ fn format_bytes(bytes: i64) -> String {
     } else {
         format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
+}
+
+/// Public function to handle the CLI upload-save-files command
+pub async fn upload_save_files_cli(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+) -> Result<()> {
+    upload_save_files_for_game(settings, game_id, gogdl).await
 }
 
 /// Public function to handle the CLI download-save-files command

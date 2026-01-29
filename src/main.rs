@@ -7,7 +7,7 @@ use crate::{
     cli::ManageAction,
     commands::{
         games::handle_games,
-        management::{download_save_files_cli, handle_manage},
+        management::{download_save_files_cli, handle_manage, upload_save_files_cli},
         proton::handle_proton,
         runner::handle_run,
     },
@@ -116,7 +116,29 @@ async fn main() -> Result<(), anyhow::Error> {
             if let (Some(gid), Some(act)) = (game_id, action.clone()) {
                 // Direct CLI mode
                 match act {
+                    ManageAction::UploadSaveFiles => {
+                        let auth = match secret::recover_token().await {
+                            Ok(auth) => auth,
+                            Err(err) => {
+                                eprintln!("Failed to recover token: {}, please login again", err);
+                                exit(1);
+                            }
+                        };
+                        gogdl.set_auth(Some(auth)).await;
+                        if let Err(e) = upload_save_files_cli(&mut settings, gid, gogdl).await {
+                            println!("Error uploading save files: {}", e);
+                            exit(1);
+                        }
+                    }
                     ManageAction::DownloadSaveFiles => {
+                        let auth = match secret::recover_token().await {
+                            Ok(auth) => auth,
+                            Err(err) => {
+                                eprintln!("Failed to recover token: {}, please login again", err);
+                                exit(1);
+                            }
+                        };
+                        gogdl.set_auth(Some(auth)).await;
                         if let Err(e) = download_save_files_cli(&mut settings, gid, gogdl).await {
                             eprintln!("Error downloading save files: {}", e);
                             exit(1);
