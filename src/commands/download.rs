@@ -167,31 +167,27 @@ pub async fn download_game(
 
     // Progress reporting loop
     let mut downloaded_size: i64 = 0;
-    let mut last_percent = 0;
     use std::io::Write;
 
     while let Some(size) = rx.recv().await {
         downloaded_size += size;
-        let percent = ((downloaded_size as f64 / total_size as f64) * 100.0) as i32;
+        let percent = ((downloaded_size as f64 / total_size as f64) * 100.0) as f64;
 
         // Only update display when percentage changes
-        if percent != last_percent {
-            let downloaded_mb = downloaded_size / 1024 / 1024;
-            let total_mb = total_size / 1024 / 1024;
+        let downloaded_mb = downloaded_size / 1024 / 1024;
+        let total_mb = total_size / 1024 / 1024;
 
-            print!(
-                "\r{} [{:50}] {:.1}%  ({} MB / {} MB)",
-                console::style("Progress:").green(),
-                "=".repeat((percent as usize) / 2),
-                percent as f64,
-                downloaded_mb,
-                total_mb
-            );
+        print!(
+            "\r{} [{:50}] {:.2}%  ({:.2} MB / {:.2} MB)",
+            console::style("Progress:").green(),
+            "=".repeat((percent as usize) / 2),
+            percent,
+            downloaded_mb,
+            total_mb
+        );
 
-            // Flush stdout to ensure progress is displayed immediately
-            let _ = std::io::stdout().flush();
-            last_percent = percent;
-        }
+        // Flush stdout to ensure progress is displayed immediately
+        let _ = std::io::stdout().flush();
     }
 
     println!(); // New line after progress
