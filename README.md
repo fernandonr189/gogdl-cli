@@ -91,6 +91,7 @@ This opens an interactive menu where you can:
 - Add environment variables
 - Clear arguments or environment variables
 - Download cloud save files (for games that support cloud saves)
+- Upload cloud save files (for games that support cloud saves)
 
 ### Proton Management
 
@@ -164,6 +165,9 @@ gogdl manage -g <game_id> clear-env
 
 # Download cloud save files
 gogdl manage -g <game_id> download-save-files
+
+# Upload cloud save files
+gogdl manage -g <game_id> upload-save-files
 ```
 
 ### Proton Management
