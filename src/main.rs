@@ -4,16 +4,18 @@ use clap::Parser;
 use gogdl_lib::GogDl;
 
 use crate::{
+    auth::manage_auth,
     cli::ManageAction,
     commands::{
         games::handle_games,
-        management::{download_save_files_cli, handle_manage, upload_save_files_cli},
+        management::{download_save_files_for_game, handle_manage, upload_save_files_for_game},
         proton::handle_proton,
         runner::handle_run,
     },
     settings::AppSettings,
 };
 
+mod auth;
 mod cli;
 mod commands;
 mod hint;
@@ -38,13 +40,7 @@ async fn main() -> Result<(), anyhow::Error> {
             path,
             fix,
         } => {
-            let auth = match secret::recover_token().await {
-                Ok(auth) => auth,
-                Err(err) => {
-                    eprintln!("Failed to recover token: {}, please login again", err);
-                    exit(1);
-                }
-            };
+            manage_auth(gogdl.clone()).await;
 
             let download_path = format!(
                 "{}/{}",
@@ -58,8 +54,6 @@ async fn main() -> Result<(), anyhow::Error> {
                 "games"
             );
 
-            gogdl.set_auth(Some(auth)).await;
-
             commands::download::handle_download(
                 gogdl,
                 game_id,
@@ -71,20 +65,10 @@ async fn main() -> Result<(), anyhow::Error> {
             .await?;
         }
         cli::Commands::Games { list } => {
-            let auth = match secret::recover_token().await {
-                Ok(auth) => auth,
-                Err(err) => {
-                    eprintln!("Failed to recover token: {}, please login again", err);
-                    exit(1);
-                }
-            };
-            gogdl.set_auth(Some(auth)).await;
-
+            manage_auth(gogdl.clone()).await;
             if list {
-                // Direct CLI mode: just list games
                 commands::games::list_games_cli(gogdl).await;
             } else {
-                // Interactive mode
                 handle_games(gogdl, &mut settings).await;
             }
         }
@@ -95,9 +79,7 @@ async fn main() -> Result<(), anyhow::Error> {
             installed,
             remove,
         } => {
-            // Check if any direct CLI flags are provided
             if list || download.is_some() || installed || remove.is_some() {
-                // Direct CLI mode
                 commands::proton::handle_proton_cli(
                     list,
                     download,
@@ -108,38 +90,25 @@ async fn main() -> Result<(), anyhow::Error> {
                 )
                 .await;
             } else {
-                // Interactive mode
                 handle_proton(&mut settings).await;
             }
         }
         cli::Commands::Manage { game_id, action } => {
             if let (Some(gid), Some(act)) = (game_id, action.clone()) {
-                // Direct CLI mode
                 match act {
                     ManageAction::UploadSaveFiles => {
-                        let auth = match secret::recover_token().await {
-                            Ok(auth) => auth,
-                            Err(err) => {
-                                eprintln!("Failed to recover token: {}, please login again", err);
-                                exit(1);
-                            }
-                        };
-                        gogdl.set_auth(Some(auth)).await;
-                        if let Err(e) = upload_save_files_cli(&mut settings, gid, gogdl).await {
+                        manage_auth(gogdl.clone()).await;
+                        if let Err(e) = upload_save_files_for_game(&mut settings, gid, gogdl).await
+                        {
                             println!("Error uploading save files: {}", e);
                             exit(1);
                         }
                     }
                     ManageAction::DownloadSaveFiles => {
-                        let auth = match secret::recover_token().await {
-                            Ok(auth) => auth,
-                            Err(err) => {
-                                eprintln!("Failed to recover token: {}, please login again", err);
-                                exit(1);
-                            }
-                        };
-                        gogdl.set_auth(Some(auth)).await;
-                        if let Err(e) = download_save_files_cli(&mut settings, gid, gogdl).await {
+                        manage_auth(gogdl.clone()).await;
+                        if let Err(e) =
+                            download_save_files_for_game(&mut settings, gid, gogdl).await
+                        {
                             eprintln!("Error downloading save files: {}", e);
                             exit(1);
                         }
@@ -175,7 +144,6 @@ async fn main() -> Result<(), anyhow::Error> {
         }
         cli::Commands::Run { game_id } => {
             if let Some(gid) = game_id {
-                // Direct CLI mode
                 commands::runner::run_game(&mut settings, gid).await;
             } else {
                 // Interactive mode

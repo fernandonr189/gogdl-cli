@@ -1,14 +1,14 @@
-use std::{process::exit, sync::Arc};
+use std::sync::Arc;
 
 use console::style;
 use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
 use gogdl_lib::{GogDl, GogdlError, client::ClientError, games::GameDetails};
 
-use crate::{hint, secret, settings::AppSettings};
+use crate::{auth::manage_auth, hint, settings::AppSettings};
 
 /// Interactive games browser
 pub async fn handle_games(gogdl: Arc<GogDl>, settings: &mut AppSettings) {
-    let games = match fetch_games(gogdl.clone()).await {
+    let games = match gogdl.get_owned_games().await {
         Ok(games) => games,
         Err(err) => {
             handle_error(err, gogdl).await;
@@ -68,9 +68,8 @@ pub async fn handle_games(gogdl: Arc<GogDl>, settings: &mut AppSettings) {
     }
 }
 
-/// CLI mode: list all owned games
 pub async fn list_games_cli(gogdl: Arc<GogDl>) {
-    let games = match fetch_games(gogdl.clone()).await {
+    let games = match gogdl.get_owned_games().await {
         Ok(games) => games,
         Err(err) => {
             handle_error(err, gogdl).await;
@@ -166,13 +165,13 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc
     let game_id = game.id;
     let game_title = game.title.clone();
 
-    match crate::commands::download::handle_download_for_game(
+    match crate::commands::download::handle_download(
+        gogdl,
         game_id,
         None,
         &download_path,
         settings,
         false,
-        gogdl,
     )
     .await
     {
@@ -190,31 +189,11 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc
     }
 }
 
-async fn fetch_games(gogdl: Arc<GogDl>) -> Result<Vec<GameDetails>, GogdlError> {
-    gogdl.get_owned_games().await
-}
-
 async fn handle_error(err: GogdlError, gogdl: Arc<GogDl>) {
     match err {
         GogdlError::ClientError(ClientError::Http { status, body }) => {
             if status.as_u16() == 401 {
-                let auth = match gogdl.refresh_token().await {
-                    Ok(auth) => auth,
-                    Err(_) => {
-                        println!(
-                            "{}",
-                            style("Could not refresh auth, please login again").red()
-                        );
-                        exit(1);
-                    }
-                };
-                match secret::store_token(&auth).await {
-                    Ok(_) => println!("{}", style("Token refreshed successfully").green()),
-                    Err(err) => {
-                        eprintln!("{}", style(format!("Error storing token: {}", err)).red())
-                    }
-                }
-                println!("{}", style("Please try again").yellow());
+                manage_auth(gogdl.clone()).await;
             } else {
                 println!(
                     "{}",
