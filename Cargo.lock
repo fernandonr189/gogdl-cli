@@ -1313,7 +1313,7 @@ dependencies = [
 [[package]]
 name = "prefix-manager"
 version = "0.1.0"
-source = "git+https://github.com/fernandonr189/prefix-manager.git#a4bd79ad3921b1ec8ec28d6c4f193c45a16435d8"
+source = "git+https://github.com/fernandonr189/prefix-manager.git?rev=a4bd79ad3921b1ec8ec28d6c4f193c45a16435d8#a4bd79ad3921b1ec8ec28d6c4f193c45a16435d8"
 dependencies = [
  "flate2",
  "futures",

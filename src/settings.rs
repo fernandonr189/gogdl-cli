@@ -89,11 +89,17 @@ impl AppSettings {
         if let Some(project_dirs) = ProjectDirs::from("com", "fernandonr189", "gogdl") {
             let path = project_dirs.config_dir().join("settings.json");
             if path.exists() {
-                let contents = fs::read_to_string(path).await?;
+                let contents = fs::read_to_string(&path).await?;
                 let settings = match serde_json::from_str(&contents) {
                     Ok(settings) => settings,
                     Err(err) => {
-                        println!("Failed to parse settings file: {}", err);
+                        let backup_path = project_dirs.config_dir().join("settings.json.bak");
+                        fs::rename(&path, &backup_path).await?;
+                        println!(
+                            "Failed to parse settings file: {}. The corrupt file was moved to {} for inspection; a fresh settings file will be created.",
+                            err,
+                            backup_path.display()
+                        );
                         Self::initialize().await?
                     }
                 };
@@ -108,9 +114,12 @@ impl AppSettings {
     pub async fn save(&self) -> Result<(), anyhow::Error> {
         if let Some(proj_dirs) = ProjectDirs::from("com", "fernandonr189", "gogdl") {
             let dir = proj_dirs.config_dir();
+            fs::create_dir_all(dir).await?;
             let file_path = dir.join("settings.json");
+            let tmp_path = dir.join("settings.json.tmp");
             let contents = serde_json::to_string_pretty(self)?;
-            fs::write(file_path, contents).await?;
+            fs::write(&tmp_path, contents).await?;
+            fs::rename(&tmp_path, &file_path).await?;
             Ok(())
         } else {
             Err(anyhow::anyhow!("Failed to save settings"))

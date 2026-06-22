@@ -63,6 +63,8 @@ Tokens are stored via `org.freedesktop.secrets` (the `secret-service` crate), no
 
 `DownloadedGame` carries everything needed to run a game later: build id, install path, optional Proton version/prefix path/executable, plus user-set `args`/`environment_variables`. A game is only "ready to run" once both `proton_version` and `executable` are set — `runner.rs` and `management.rs` both check for this and prompt interactively to fill gaps when missing.
 
+`save()` writes to a sibling `settings.json.tmp` then atomically renames it onto `settings.json` (crash-safe — never a partial write). `load()` backs up a corrupt `settings.json` to `settings.json.bak` (overwriting any previous backup) before reinitializing, instead of silently discarding it.
+
 ### CLI hints (`src/hint.rs`)
 
 Interactive flows print the scriptable CLI-equivalent command after the user makes a choice (`hint::print_command_hint(&hint::xxx_command(...))`), so users can learn the direct syntax. When adding a new interactive action, add a matching `*_command(...)` builder in `hint.rs` and call `print_command_hint` at the point the action is taken, mirroring existing call sites in `commands/games.rs`, `commands/management.rs`, `commands/proton.rs`, `commands/runner.rs`.
@@ -73,6 +75,6 @@ Downloads/uploads (`commands/download.rs`, `commands/management.rs::{upload,down
 
 ### Game execution (`src/commands/runner.rs`)
 
-`run_game` lazily fills in missing config (Proton version, executable) via interactive prompts even when invoked from CLI mode with just a `game_id` — there's no separate "configure" gate before running. It creates the Wine prefix on first run by invoking `<proton_path>/proton run wineboot` with `STEAM_COMPAT_CLIENT_INSTALL_PATH`/`STEAM_COMPAT_DATA_PATH` env vars, then launches the game the same way with user-configured env vars/args appended.
+`run_game` lazily fills in missing config (Proton version, executable) via interactive prompts even when invoked from CLI mode with just a `game_id` — there's no separate "configure" gate before running. It creates the Wine prefix on first run by invoking `<proton_path>/proton run wineboot` with `STEAM_COMPAT_CLIENT_INSTALL_PATH`/`STEAM_COMPAT_DATA_PATH` env vars, then launches the game the same way with user-configured env vars/args appended. `STEAM_COMPAT_CLIENT_INSTALL_PATH` is a single shared, persistent `<data_path>/steam` directory (created on demand) — Proton just needs *a* writable directory there, not a real Steam install; `STEAM_COMPAT_DATA_PATH` is the per-game Wine prefix.
 
-Note: `find_executables` (recursive `.exe` scan with skip-lists for installers/redistributables) is duplicated verbatim in `commands/management.rs` and `commands/runner.rs` — keep both in sync if changing the skip-list logic, or consider extracting it if touching this area.
+`find_executables` (recursive `.exe` scan with skip-lists for installers/redistributables) lives in `src/commands/common.rs` and is shared by `commands/management.rs` and `commands/runner.rs` — add any new cross-command helpers there too rather than duplicating.

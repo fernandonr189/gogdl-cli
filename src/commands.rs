@@ -1,3 +1,4 @@
+pub mod common;
 pub mod download;
 pub mod games;
 pub mod login;

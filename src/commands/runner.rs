@@ -4,6 +4,7 @@ use console::style;
 use dialoguer::{FuzzySelect, theme::ColorfulTheme};
 use tokio::process::Command;
 
+use crate::commands::common;
 use crate::hint;
 use crate::settings::{AppSettings, DownloadedProtonVersion};
 
@@ -201,6 +202,24 @@ pub async fn run_game(settings: &mut AppSettings, game_id: i32) {
         )
     };
 
+    // Shared, persistent Steam-compat client install path. Proton does not
+    // need a real Steam install here -- it only needs a writable directory
+    // to exist, and this is shared across all games (matching how Lutris
+    // and Heroic configure non-Steam Proton launches), unlike the per-game
+    // STEAM_COMPAT_DATA_PATH (prefix_path) below.
+    let steam_compat_client_path = format!("{}/steam", data_path);
+    if let Err(err) = tokio::fs::create_dir_all(&steam_compat_client_path).await {
+        eprintln!(
+            "{}",
+            style(format!(
+                "Failed to create Steam compat client directory: {}",
+                err
+            ))
+            .red()
+        );
+        exit(1);
+    }
+
     // Handle prefix creation if needed
     let prefix_path = if prefix_path_opt.is_none() {
         let new_prefix_path = format!("{}/prefixes/{}", data_path, game_id);
@@ -224,7 +243,10 @@ pub async fn run_game(settings: &mut AppSettings, game_id: i32) {
         let result = Command::new(format!("{}/proton", proton_path))
             .arg("run")
             .arg("wineboot")
-            .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", "/tmp/steam")
+            .env(
+                "STEAM_COMPAT_CLIENT_INSTALL_PATH",
+                &steam_compat_client_path,
+            )
             .env("STEAM_COMPAT_DATA_PATH", &new_prefix_path)
             .status()
             .await;
@@ -278,7 +300,10 @@ pub async fn run_game(settings: &mut AppSettings, game_id: i32) {
     command
         .arg("run")
         .arg(&full_game_path)
-        .env("STEAM_COMPAT_CLIENT_INSTALL_PATH", "/tmp/steam")
+        .env(
+            "STEAM_COMPAT_CLIENT_INSTALL_PATH",
+            &steam_compat_client_path,
+        )
         .env("STEAM_COMPAT_DATA_PATH", &prefix_path)
         .current_dir(parent_path.unwrap());
 
@@ -331,7 +356,7 @@ async fn select_proton_version(settings: &AppSettings) -> Option<DownloadedProto
 async fn select_executable(game_path: &str) -> Option<String> {
     println!("{}", style("Scanning for executables...").dim());
 
-    let executables = find_executables(game_path).await;
+    let executables = common::find_executables(game_path).await;
 
     if executables.is_empty() {
         println!(
@@ -383,73 +408,4 @@ async fn select_executable(game_path: &str) -> Option<String> {
         }
         _ => None,
     }
-}
-
-async fn find_executables(base_path: &str) -> Vec<String> {
-    let mut executables = Vec::new();
-
-    if let Ok(_entries) = tokio::fs::read_dir(base_path).await {
-        let mut stack = vec![String::new()];
-
-        while let Some(relative_dir) = stack.pop() {
-            let current_path = if relative_dir.is_empty() {
-                base_path.to_string()
-            } else {
-                format!("{}/{}", base_path, relative_dir)
-            };
-
-            if let Ok(mut dir_entries) = tokio::fs::read_dir(&current_path).await {
-                while let Ok(Some(entry)) = dir_entries.next_entry().await {
-                    let file_name = entry.file_name().to_string_lossy().to_string();
-                    let relative_path = if relative_dir.is_empty() {
-                        file_name.clone()
-                    } else {
-                        format!("{}/{}", relative_dir, file_name)
-                    };
-
-                    if let Ok(file_type) = entry.file_type().await {
-                        if file_type.is_dir() {
-                            // Skip common non-game directories
-                            let skip_dirs = [
-                                "support",
-                                "__support",
-                                "directx",
-                                "redist",
-                                "vcredist",
-                                "_commonredist",
-                            ];
-                            if !skip_dirs
-                                .iter()
-                                .any(|d| file_name.to_lowercase().contains(d))
-                            {
-                                stack.push(relative_path);
-                            }
-                        } else if file_type.is_file() {
-                            let lower = file_name.to_lowercase();
-                            if lower.ends_with(".exe") {
-                                // Skip common non-game executables
-                                let skip_exes = [
-                                    "unins",
-                                    "setup",
-                                    "install",
-                                    "crash",
-                                    "report",
-                                    "vc_redist",
-                                    "dxsetup",
-                                    "dotnet",
-                                ];
-                                if !skip_exes.iter().any(|s| lower.contains(s)) {
-                                    executables.push(relative_path);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    executables.sort();
-    executables.dedup();
-    executables
 }
