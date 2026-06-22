@@ -668,13 +668,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-util",
  "walkdir",
 ]
 
 [[package]]
 name = "gogdl-lib"
-version = "0.1.0"
-source = "git+https://github.com/fernandonr189/gogdl-lib.git?tag=v0.3.7#b64e69ba85eef3ef5297d80a73e28deb87a99a69"
+version = "0.4.0"
+source = "git+https://github.com/fernandonr189/gogdl-lib.git?tag=v0.4.0#2c605de4e6055285fee41d79f3993a13f408b30d"
 dependencies = [
  "chrono",
  "filetime",
@@ -689,6 +690,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "tokio",
+ "tokio-util",
  "url",
  "uuid",
 ]

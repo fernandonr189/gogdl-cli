@@ -1,7 +1,12 @@
 use std::{io::Write, process::exit, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use gogdl_lib::{GogDl, GogdlError, client::ClientError};
+use gogdl_lib::{
+    GogDl, GogdlError,
+    client::ClientError,
+    games::{DownloadOptions, OperatingSystem},
+};
+use tokio_util::sync::CancellationToken;
 
 use crate::{auth::manage_auth, settings::AppSettings};
 
@@ -29,7 +34,10 @@ pub async fn handle_download(
             }
             download_game(gogdl.clone(), game_id, &version_id, path).await
         } else {
-            let game_builds = match gogdl.get_game_builds(game_id).await {
+            let game_builds = match gogdl
+                .get_game_builds(game_id, OperatingSystem::Windows)
+                .await
+            {
                 Ok(builds) => builds.items,
                 Err(err) => {
                     println!("Error fetching game builds: {}", err);
@@ -104,20 +112,30 @@ pub async fn download_game(
     path: &str,
 ) -> Result<bool, GogdlError> {
     let total_size = {
-        let chunks = gogdl.get_build_chunks(game_id, build_name).await?;
+        let chunks = gogdl
+            .get_build_chunks(game_id, OperatingSystem::Windows, build_name)
+            .await?;
         let total_size: u64 = chunks.iter().map(|chunk| chunk.compressed_size).sum();
         println!("Total size: {} MB", total_size / 1024 / 1024);
         println!("Number of chunks: {}", chunks.len());
         total_size
     };
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
     let build_name_clone = build_name.to_string();
     let path_clone = path.to_string();
 
     // Spawn the download task
     tokio::spawn(async move {
         match gogdl
-            .download_build(game_id, &build_name_clone, tx, &path_clone)
+            .download_build(
+                game_id,
+                &build_name_clone,
+                tx,
+                &path_clone,
+                OperatingSystem::Windows,
+                CancellationToken::new(),
+                DownloadOptions::default(),
+            )
             .await
         {
             Ok(_) => {}
@@ -130,8 +148,8 @@ pub async fn download_game(
     // Progress reporting loop
     let mut downloaded_size: i64 = 0;
 
-    while let Some(size) = rx.recv().await {
-        downloaded_size += size;
+    while let Some((downloaded, _total)) = rx.recv().await {
+        downloaded_size = downloaded;
         let percent = ((downloaded_size as f64 / total_size as f64) * 100.0) as f64;
 
         // Only update display when percentage changes
