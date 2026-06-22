@@ -74,35 +74,28 @@ pub async fn handle_download(
         }
     };
 
-    if let Err(err) = result {
-        match err {
-            GogdlError::ClientError(ClientError::Http { status, body }) => {
+    let complete = match result {
+        Ok(complete) => complete,
+        Err(err) => {
+            if let GogdlError::ClientError(ClientError::Http { status, .. }) = &err {
                 if status.as_u16() == 401 {
                     manage_auth(gogdl.clone()).await;
-                    Ok(())
-                } else {
-                    println!("HttpError: Status: {}, Body: {}", status.as_u16(), body);
-                    Ok(())
                 }
             }
-            _ => {
-                println!("{}", err);
-                Ok(())
-            }
+            return Err(err.into());
         }
-    } else {
-        let complete = result.unwrap_or(false);
-        settings
-            .add_game(
-                &download_build,
-                &format!("{}/{}", path, game_details.title),
-                None,
-                complete,
-                game_id,
-            )
-            .await;
-        Ok(())
-    }
+    };
+
+    settings
+        .add_game(
+            &download_build,
+            &format!("{}/{}", path, game_details.title),
+            None,
+            complete,
+            game_id,
+        )
+        .await;
+    Ok(())
 }
 
 pub async fn download_game(
@@ -125,8 +118,8 @@ pub async fn download_game(
     let path_clone = path.to_string();
 
     // Spawn the download task
-    tokio::spawn(async move {
-        match gogdl
+    let download_task = tokio::spawn(async move {
+        gogdl
             .download_build(
                 game_id,
                 &build_name_clone,
@@ -137,12 +130,6 @@ pub async fn download_game(
                 DownloadOptions::default(),
             )
             .await
-        {
-            Ok(_) => {}
-            Err(err) => {
-                println!("\nError downloading build: {}", err);
-            }
-        }
     });
 
     // Progress reporting loop
@@ -170,6 +157,18 @@ pub async fn download_game(
     }
 
     println!(); // New line after progress
+
+    match download_task.await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            println!("Error downloading build: {}", err);
+            return Err(err);
+        }
+        Err(join_err) => {
+            println!("Download task failed: {}", join_err);
+            return Ok(false);
+        }
+    }
 
     if downloaded_size >= total_size as i64 {
         println!("Download complete!");
