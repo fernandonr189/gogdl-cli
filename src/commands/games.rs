@@ -64,7 +64,6 @@ pub async fn handle_games(gogdl: Arc<GogDl>, settings: &mut AppSettings) {
                 break;
             }
         }
-        break;
     }
 }
 
@@ -100,16 +99,17 @@ async fn handle_game_selection(game: &GameDetails, settings: &mut AppSettings, g
         .iter()
         .any(|dg| dg.game_id == game.id);
 
+    if is_installed {
+        crate::commands::management::manage_game(settings, game.id, gogdl).await;
+        return;
+    }
+
     println!();
     println!("{}", style(format!("📦 {}", game.title)).bold());
     println!("{}", style(format!("ID: {}", game.id)).dim());
     println!();
 
-    let options = if is_installed {
-        vec!["Reinstall / Update", "Back"]
-    } else {
-        vec!["Install", "Back"]
-    };
+    let options = vec!["Install", "Back"];
 
     let action = FuzzySelect::with_theme(&ColorfulTheme::default())
         .with_prompt("What would you like to do?")
@@ -119,28 +119,15 @@ async fn handle_game_selection(game: &GameDetails, settings: &mut AppSettings, g
 
     match action {
         Ok(Some(0)) => {
-            install_game(game, settings, gogdl, is_installed).await;
+            install_game(game, settings, gogdl).await;
         }
         _ => {}
     }
 }
 
-async fn install_game(
-    game: &GameDetails,
-    settings: &mut AppSettings,
-    gogdl: Arc<GogDl>,
-    is_installed: bool,
-) {
+async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc<GogDl>) {
     println!();
-    let action_label = if is_installed {
-        "Verifying / updating"
-    } else {
-        "Installing"
-    };
-    println!(
-        "{}",
-        style(format!("{}: {}", action_label, game.title)).cyan()
-    );
+    println!("{}", style(format!("Installing: {}", game.title)).cyan());
 
     let default_path = format!("{}/games", settings.data_path);
 
@@ -184,20 +171,15 @@ async fn install_game(
         None,
         &download_path,
         settings,
-        is_installed,
+        false,
     )
     .await
     {
         Ok(_) => {
             println!();
-            let verb = if is_installed {
-                "verified/updated"
-            } else {
-                "installed"
-            };
             println!(
                 "{}",
-                style(format!("✅ {} {} successfully!", game_title, verb)).green()
+                style(format!("✅ {} installed successfully!", game_title)).green()
             );
         }
         Err(err) => {

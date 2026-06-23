@@ -84,7 +84,7 @@ fn get_game_status(game: &DownloadedGame) -> String {
     format!("[{}]", status_parts.join(", "))
 }
 
-async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>) {
+pub async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>) {
     loop {
         let game = match settings
             .downloaded_games
@@ -135,6 +135,7 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>
         println!();
 
         let options = vec![
+            "Run game",
             "Set Proton version",
             "Set executable",
             "Add launch argument",
@@ -155,30 +156,34 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>
             .interact_opt();
 
         match action {
-            Ok(Some(0)) => set_proton_interactive(settings, game_id).await,
-            Ok(Some(1)) => set_executable_interactive(settings, game_id).await,
-            Ok(Some(2)) => add_arg_interactive(settings, game_id).await,
-            Ok(Some(3)) => clear_args(settings, game_id).await,
-            Ok(Some(4)) => add_env_interactive(settings, game_id).await,
-            Ok(Some(5)) => clear_env_vars(settings, game_id).await,
-            Ok(Some(6)) => {
+            Ok(Some(0)) => {
+                hint::print_command_hint(&hint::run_command(game_id));
+                crate::commands::runner::run_game(settings, game_id).await;
+            }
+            Ok(Some(1)) => set_proton_interactive(settings, game_id).await,
+            Ok(Some(2)) => set_executable_interactive(settings, game_id).await,
+            Ok(Some(3)) => add_arg_interactive(settings, game_id).await,
+            Ok(Some(4)) => clear_args(settings, game_id).await,
+            Ok(Some(5)) => add_env_interactive(settings, game_id).await,
+            Ok(Some(6)) => clear_env_vars(settings, game_id).await,
+            Ok(Some(7)) => {
                 manage_auth(gogdl.clone()).await;
                 if let Err(e) = download_save_files_for_game(settings, game_id, gogdl.clone()).await
                 {
                     println!("{}", style(format!("Error: {}", e)).red());
                 }
             }
-            Ok(Some(7)) => {
+            Ok(Some(8)) => {
                 manage_auth(gogdl.clone()).await;
                 if let Err(e) = upload_save_files_for_game(settings, game_id, gogdl.clone()).await {
                     println!("{}", style(format!("Error: {}", e)).red());
                 }
             }
-            Ok(Some(8)) => {
+            Ok(Some(9)) => {
                 manage_auth(gogdl.clone()).await;
                 verify_download_interactive(settings, game_id, gogdl.clone()).await;
             }
-            Ok(Some(9)) => {
+            Ok(Some(10)) => {
                 manage_auth(gogdl.clone()).await;
                 update_interactive(settings, game_id, gogdl.clone()).await;
             }
