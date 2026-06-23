@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use gogdl_lib::{
     GogDl, GogdlError,
     client::ClientError,
-    games::{DownloadOptions, OperatingSystem, RepairProgress, RepairSummary},
+    games::{DownloadOptions, GameBuild, OperatingSystem, RepairProgress, RepairSummary},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -34,26 +34,13 @@ pub async fn handle_download(
             }
             download_game(gogdl.clone(), game_id, &version_id, path).await
         } else {
-            let game_builds = match gogdl
-                .get_game_builds(game_id, OperatingSystem::Windows)
-                .await
-            {
-                Ok(builds) => builds.items,
+            let latest_build = match find_latest_build(gogdl.clone(), game_id).await {
+                Ok(build) => build,
                 Err(err) => {
                     println!("Error fetching game builds: {}", err);
                     exit(1)
                 }
             };
-
-            let latest_build = game_builds
-                .iter()
-                .filter_map(|b| {
-                    DateTime::parse_from_str(&b.date_published, "%Y-%m-%dT%H:%M:%S%z")
-                        .ok()
-                        .map(|dt| (dt.with_timezone(&Utc), b))
-                })
-                .max_by_key(|(dt, _)| *dt)
-                .map(|(_, b)| b);
 
             if let Some(latest) = latest_build {
                 download_build = latest.version_name.clone();
@@ -96,6 +83,28 @@ pub async fn handle_download(
         )
         .await;
     Ok(())
+}
+
+/// Fetches all builds for a game and returns the one with the most recent
+/// `date_published`, or `None` if no build has a parseable publish date.
+pub async fn find_latest_build(
+    gogdl: Arc<GogDl>,
+    game_id: i32,
+) -> Result<Option<GameBuild>, GogdlError> {
+    let game_builds = gogdl
+        .get_game_builds(game_id, OperatingSystem::Windows)
+        .await?
+        .items;
+
+    Ok(game_builds
+        .into_iter()
+        .filter_map(|b| {
+            DateTime::parse_from_str(&b.date_published, "%Y-%m-%dT%H:%M:%S%z")
+                .ok()
+                .map(|dt| (dt.with_timezone(&Utc), b))
+        })
+        .max_by_key(|(dt, _)| *dt)
+        .map(|(_, b)| b))
 }
 
 pub async fn download_game(

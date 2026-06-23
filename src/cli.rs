@@ -137,4 +137,12 @@ pub enum ManageAction {
     /// Verify and repair/resume a game's downloaded files
     #[command(name = "verify-download")]
     VerifyDownload,
+
+    /// Check for and install the latest update for a game
+    #[command(name = "update")]
+    Update {
+        #[arg(short, long)]
+        /// Update to a specific version instead of the latest
+        version: Option<String>,
+    },
 }

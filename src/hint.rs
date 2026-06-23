@@ -69,6 +69,14 @@ pub fn manage_verify_download_command(game_id: i32) -> String {
     format!("gogdl manage -g {} verify-download", game_id)
 }
 
+/// Build a CLI command string for updating a game
+pub fn manage_update_command(game_id: i32, version: Option<&str>) -> String {
+    match version {
+        Some(v) => format!("gogdl manage -g {} update -v \"{}\"", game_id, v),
+        None => format!("gogdl manage -g {} update", game_id),
+    }
+}
+
 /// Build a CLI command string for listing games
 pub fn games_list_command() -> String {
     "gogdl games -l".to_string()

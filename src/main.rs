@@ -9,7 +9,7 @@ use crate::{
     commands::{
         games::handle_games,
         management::{
-            download_save_files_for_game, handle_manage, upload_save_files_for_game,
+            download_save_files_for_game, handle_manage, update_cli, upload_save_files_for_game,
             verify_download_cli,
         },
         proton::handle_proton,
@@ -139,6 +139,13 @@ async fn main() -> Result<(), anyhow::Error> {
                         manage_auth(gogdl.clone()).await;
                         if let Err(e) = verify_download_cli(&mut settings, gid, gogdl).await {
                             eprintln!("Error verifying download: {}", e);
+                            exit(1);
+                        }
+                    }
+                    ManageAction::Update { version } => {
+                        manage_auth(gogdl.clone()).await;
+                        if let Err(e) = update_cli(&mut settings, gid, gogdl, version).await {
+                            eprintln!("Error updating game: {}", e);
                             exit(1);
                         }
                     }

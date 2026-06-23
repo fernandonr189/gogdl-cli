@@ -2,8 +2,9 @@ use std::{path::PathBuf, process::exit, sync::Arc};
 
 use anyhow::Result;
 use console::style;
-use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
+use dialoguer::{Confirm, FuzzySelect, Input, theme::ColorfulTheme};
 use gogdl_lib::GogDl;
+use gogdl_lib::games::OperatingSystem;
 use walkdir::WalkDir;
 
 use crate::auth::manage_auth;
@@ -143,6 +144,7 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>
             "Download cloud saves",
             "Upload cloud saves",
             "Verify / repair download",
+            "Update game",
             "← Back",
         ];
 
@@ -175,6 +177,10 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>
             Ok(Some(8)) => {
                 manage_auth(gogdl.clone()).await;
                 verify_download_interactive(settings, game_id, gogdl.clone()).await;
+            }
+            Ok(Some(9)) => {
+                manage_auth(gogdl.clone()).await;
+                update_interactive(settings, game_id, gogdl.clone()).await;
             }
             _ => break,
         }
@@ -504,6 +510,185 @@ pub async fn verify_download_cli(
     gogdl: Arc<GogDl>,
 ) -> Result<()> {
     verify_download(settings, game_id, gogdl).await
+}
+
+struct UpdateCheck {
+    current_build: String,
+    target_build: String,
+    root_path: String,
+}
+
+async fn check_for_update(
+    settings: &AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+    version: Option<String>,
+) -> Result<UpdateCheck> {
+    let game = settings
+        .downloaded_games
+        .iter()
+        .find(|g| g.game_id == game_id)
+        .ok_or_else(|| anyhow::anyhow!("Game not found in downloaded games"))?;
+
+    let current_build = game.build_id.clone();
+
+    // game.path is title-suffixed (settings.add_game appends `/{title}`); the
+    // download/verify APIs need the root games directory it was originally
+    // given, so derive the parent back out (same trick verify_download uses).
+    let root_path = std::path::Path::new(&game.path)
+        .parent()
+        .ok_or_else(|| {
+            anyhow::anyhow!("Could not determine root download path from: {}", game.path)
+        })?
+        .to_string_lossy()
+        .into_owned();
+
+    let target_build = match version {
+        Some(v) => v,
+        None => {
+            crate::commands::download::find_latest_build(gogdl, game_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Could not fetch latest build"))?
+                .version_name
+        }
+    };
+
+    Ok(UpdateCheck {
+        current_build,
+        target_build,
+        root_path,
+    })
+}
+
+/// Moves an installed game to `check.target_build`. Reuses
+/// `verify_and_repair_game` (not `download_game`/`add_game`) so the transfer
+/// is a content-hash-based delta against whatever build is currently on disk,
+/// and so the existing settings entry is updated in place rather than reset --
+/// add_game unconditionally wipes proton_version/executable/prefix_path/env
+/// vars/args, which would otherwise silently reset the game's run
+/// configuration on every update.
+async fn update_game(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+    check: &UpdateCheck,
+) -> Result<()> {
+    crate::commands::download::verify_and_repair_game(
+        gogdl,
+        game_id,
+        &check.target_build,
+        &check.root_path,
+    )
+    .await?;
+
+    let game = settings
+        .downloaded_games
+        .iter_mut()
+        .find(|g| g.game_id == game_id)
+        .ok_or_else(|| anyhow::anyhow!("Game disappeared from settings during update"))?;
+
+    game.build_id = check.target_build.clone();
+    game.download_complete = true;
+
+    // The new build may have moved/removed the configured executable; if so,
+    // clear it so runner.rs's existing lazy-prompt-fill re-selects it on the
+    // next run instead of failing to launch a path that no longer exists.
+    if let Some(exe) = &game.executable {
+        let full_path = format!("{}/{}", game.path, exe);
+        if tokio::fs::metadata(&full_path).await.is_err() {
+            game.executable = None;
+        }
+    }
+
+    settings.save().await?;
+    Ok(())
+}
+
+async fn update_interactive(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>) {
+    let check = match check_for_update(settings, game_id, gogdl.clone(), None).await {
+        Ok(check) => check,
+        Err(e) => {
+            println!("{}", style(format!("❌ Error: {}", e)).red());
+            return;
+        }
+    };
+
+    if check.current_build == check.target_build {
+        println!("{}", style("✅ Already up to date").green());
+        return;
+    }
+
+    println!();
+    println!(
+        "{}",
+        style(format!("Current build: {}", check.current_build)).dim()
+    );
+    println!(
+        "{}",
+        style(format!("Latest build:  {}", check.target_build)).dim()
+    );
+
+    match gogdl
+        .estimate_download(
+            game_id,
+            OperatingSystem::Windows,
+            &check.target_build,
+            &check.root_path,
+        )
+        .await
+    {
+        Ok(estimate) => println!(
+            "{}",
+            style(format!(
+                "Estimated download: {} MB",
+                estimate.remaining.max(0) / 1024 / 1024
+            ))
+            .dim()
+        ),
+        Err(e) => println!(
+            "{}",
+            style(format!("(Could not estimate download size: {})", e)).dim()
+        ),
+    }
+    println!();
+
+    let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Proceed with update?")
+        .default(true)
+        .interact()
+        .unwrap_or(false);
+
+    if !confirmed {
+        println!("{}", style("Cancelled").dim());
+        return;
+    }
+
+    hint::print_command_hint(&hint::manage_update_command(
+        game_id,
+        Some(&check.target_build),
+    ));
+
+    match update_game(settings, game_id, gogdl, &check).await {
+        Ok(_) => println!("{}", style("✅ Update complete").green()),
+        Err(e) => println!("{}", style(format!("❌ Error: {}", e)).red()),
+    }
+}
+
+/// CLI mode: check for and install an update for a game.
+pub async fn update_cli(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+    version: Option<String>,
+) -> Result<()> {
+    let check = check_for_update(settings, game_id, gogdl.clone(), version).await?;
+
+    if check.current_build == check.target_build {
+        println!("Already up to date");
+        return Ok(());
+    }
+
+    update_game(settings, game_id, gogdl, &check).await
 }
 
 // Original functions kept for compatibility
