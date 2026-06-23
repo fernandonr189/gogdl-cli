@@ -674,8 +674,8 @@ dependencies = [
 
 [[package]]
 name = "gogdl-lib"
-version = "0.6.0"
-source = "git+https://github.com/fernandonr189/gogdl-lib.git?tag=v0.6.0#c5c6b6b656f46b875f6f10c8996cdba97af9a137"
+version = "0.7.0"
+source = "git+https://github.com/fernandonr189/gogdl-lib.git?tag=v0.7.0#c7d7fce19e34bcd4507ed780ff91ae8e96dba104"
 dependencies = [
  "chrono",
  "filetime",

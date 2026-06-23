@@ -11,7 +11,9 @@ use chrono::{DateTime, Utc};
 use gogdl_lib::{
     GogDl, GogdlError,
     client::ClientError,
-    games::{DownloadOptions, GameBuild, OperatingSystem, RepairProgress, RepairSummary},
+    games::{
+        CleanupSummary, DownloadOptions, GameBuild, OperatingSystem, RepairProgress, RepairSummary,
+    },
 };
 use tokio_util::sync::CancellationToken;
 
@@ -296,6 +298,7 @@ pub async fn verify_and_repair_game(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<RepairProgress>();
     let build_name_clone = build_name.to_string();
     let path_clone = path.to_string();
+    let gogdl_for_cleanup = gogdl.clone();
 
     let cancellation_token = CancellationToken::new();
     let cancellation_token_for_repair = cancellation_token.clone();
@@ -380,7 +383,39 @@ pub async fn verify_and_repair_game(
 
     print_repair_summary(&summary);
 
+    // Best-effort: the build itself is already valid by this point, so a cleanup
+    // failure (e.g. a permission error deleting a residual file) shouldn't fail
+    // the repair/update/change-build call that already succeeded.
+    match gogdl_for_cleanup
+        .cleanup_build(
+            game_id,
+            build_name,
+            path,
+            OperatingSystem::Windows,
+            CancellationToken::new(),
+        )
+        .await
+    {
+        Ok(cleanup) => print_cleanup_summary(&cleanup),
+        Err(err) => println!(
+            "{}",
+            console::style(format!("⚠ Could not clean up residual files: {}", err)).yellow()
+        ),
+    }
+
     Ok(summary)
+}
+
+fn print_cleanup_summary(summary: &CleanupSummary) {
+    if summary.removed_files.is_empty() && summary.removed_dirs.is_empty() {
+        return;
+    }
+
+    println!(
+        "Cleaned up {} residual file(s) ({} MB) from a previous build.",
+        summary.removed_files.len(),
+        summary.removed_bytes / 1024 / 1024
+    );
 }
 
 fn print_repair_summary(summary: &RepairSummary) {
