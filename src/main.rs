@@ -8,7 +8,10 @@ use crate::{
     cli::ManageAction,
     commands::{
         games::handle_games,
-        management::{download_save_files_for_game, handle_manage, upload_save_files_for_game},
+        management::{
+            download_save_files_for_game, handle_manage, upload_save_files_for_game,
+            verify_download_cli,
+        },
         proton::handle_proton,
         runner::handle_run,
     },
@@ -131,6 +134,13 @@ async fn main() -> Result<(), anyhow::Error> {
                     }
                     ManageAction::ClearEnv => {
                         commands::management::clear_env_cli(&mut settings, gid).await;
+                    }
+                    ManageAction::VerifyDownload => {
+                        manage_auth(gogdl.clone()).await;
+                        if let Err(e) = verify_download_cli(&mut settings, gid, gogdl).await {
+                            eprintln!("Error verifying download: {}", e);
+                            exit(1);
+                        }
                     }
                 }
             } else if game_id.is_some() && action.is_none() {

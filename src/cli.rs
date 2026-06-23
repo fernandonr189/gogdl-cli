@@ -59,7 +59,7 @@ pub enum Commands {
         path: Option<String>,
 
         #[arg(short, long)]
-        /// Fix the game
+        /// Re-verify and resume/repair an already-downloaded build instead of skipping it
         fix: bool,
     },
 
@@ -133,4 +133,8 @@ pub enum ManageAction {
     /// Upload cloud save files for a game
     #[command(name = "upload-save-files")]
     UploadSaveFiles,
+
+    /// Verify and repair/resume a game's downloaded files
+    #[command(name = "verify-download")]
+    VerifyDownload,
 }

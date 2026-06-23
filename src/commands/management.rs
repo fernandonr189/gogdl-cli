@@ -142,6 +142,7 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>
             "Clear environment variables",
             "Download cloud saves",
             "Upload cloud saves",
+            "Verify / repair download",
             "← Back",
         ];
 
@@ -170,6 +171,10 @@ async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>
                 if let Err(e) = upload_save_files_for_game(settings, game_id, gogdl.clone()).await {
                     println!("{}", style(format!("Error: {}", e)).red());
                 }
+            }
+            Ok(Some(8)) => {
+                manage_auth(gogdl.clone()).await;
+                verify_download_interactive(settings, game_id, gogdl.clone()).await;
             }
             _ => break,
         }
@@ -438,6 +443,62 @@ pub async fn clear_env_cli(settings: &mut AppSettings, game_id: i32) {
     game.environment_variables.clear();
     let _ = settings.save().await;
     println!("{}", style("✅ Environment variables cleared").green());
+}
+
+async fn verify_download(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+) -> Result<()> {
+    let (build_id, root_path) = {
+        let game = settings
+            .downloaded_games
+            .iter()
+            .find(|g| g.game_id == game_id)
+            .ok_or_else(|| anyhow::anyhow!("Game not found in downloaded games"))?;
+
+        // game.path is title-suffixed (settings.add_game appends `/{title}`); handle_download
+        // needs the root games directory it was originally given, so derive the parent back out.
+        let root_path = std::path::Path::new(&game.path)
+            .parent()
+            .ok_or_else(|| {
+                anyhow::anyhow!("Could not determine root download path from: {}", game.path)
+            })?
+            .to_string_lossy()
+            .into_owned();
+
+        (game.build_id.clone(), root_path)
+    };
+
+    crate::commands::download::handle_download(
+        gogdl,
+        game_id,
+        Some(build_id),
+        &root_path,
+        settings,
+        true,
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn verify_download_interactive(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>) {
+    hint::print_command_hint(&hint::manage_verify_download_command(game_id));
+
+    match verify_download(settings, game_id, gogdl).await {
+        Ok(_) => println!("{}", style("✅ Verification/repair complete").green()),
+        Err(e) => println!("{}", style(format!("❌ Error: {}", e)).red()),
+    }
+}
+
+/// CLI mode: verify/repair a game's download
+pub async fn verify_download_cli(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+) -> Result<()> {
+    verify_download(settings, game_id, gogdl).await
 }
 
 // Original functions kept for compatibility

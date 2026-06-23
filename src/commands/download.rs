@@ -1,4 +1,4 @@
-use std::{io::Write, process::exit, sync::Arc};
+use std::{io::Write, process::exit, sync::Arc, time::Instant};
 
 use chrono::{DateTime, Utc};
 use gogdl_lib::{
@@ -104,15 +104,26 @@ pub async fn download_game(
     build_name: &str,
     path: &str,
 ) -> Result<bool, GogdlError> {
-    let total_size = {
-        let chunks = gogdl
-            .get_build_chunks(game_id, OperatingSystem::Windows, build_name)
-            .await?;
-        let total_size: u64 = chunks.iter().map(|chunk| chunk.compressed_size).sum();
-        println!("Total size: {} MB", total_size / 1024 / 1024);
-        println!("Number of chunks: {}", chunks.len());
-        total_size
-    };
+    let estimate = gogdl
+        .estimate_download(game_id, OperatingSystem::Windows, build_name, path)
+        .await?;
+    let total_size = estimate.total_size as u64;
+    let already_present = estimate.already_present.max(0) as u64;
+
+    println!("Total size: {} MB", total_size / 1024 / 1024);
+    if estimate.already_present > 0 {
+        let pct = (already_present as f64 / total_size.max(1) as f64) * 100.0;
+        println!(
+            "Already on disk: {} MB ({:.1}%) — resuming",
+            already_present / 1024 / 1024,
+            pct
+        );
+    }
+    println!(
+        "Remaining to download: {} MB",
+        estimate.remaining.max(0) / 1024 / 1024
+    );
+
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
     let build_name_clone = build_name.to_string();
     let path_clone = path.to_string();
@@ -134,6 +145,8 @@ pub async fn download_game(
 
     // Progress reporting loop
     let mut downloaded_size: i64 = 0;
+    let start = Instant::now();
+    let already_present_baseline = already_present as i64;
 
     while let Some((downloaded, _total)) = rx.recv().await {
         downloaded_size = downloaded;
@@ -143,13 +156,29 @@ pub async fn download_game(
         let downloaded_mb = downloaded_size / 1024 / 1024;
         let total_mb = total_size / 1024 / 1024;
 
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        let session_bytes = (downloaded_size - already_present_baseline).max(0) as f64;
+        let speed_suffix = if elapsed_secs > 0.5 && session_bytes > 0.0 {
+            let speed = session_bytes / elapsed_secs;
+            let remaining_bytes = (total_size as i64 - downloaded_size).max(0) as f64;
+            let eta = if speed > 0.0 {
+                format_duration(remaining_bytes / speed)
+            } else {
+                "--".to_string()
+            };
+            format!("  {}/s, ETA {}", format_speed(speed), eta)
+        } else {
+            String::new()
+        };
+
         print!(
-            "\r{} [{:50}] {:.2}%  ({:.2} MB / {:.2} MB)",
+            "\r{} [{:50}] {:.2}%  ({:.2} MB / {:.2} MB){}",
             console::style("Progress:").green(),
             "=".repeat((percent as usize) / 2),
             percent,
             downloaded_mb,
-            total_mb
+            total_mb,
+            speed_suffix
         );
 
         // Flush stdout to ensure progress is displayed immediately
@@ -179,5 +208,27 @@ pub async fn download_game(
             downloaded_size, total_size
         );
         Ok(false)
+    }
+}
+
+fn format_speed(bytes_per_sec: f64) -> String {
+    if bytes_per_sec < 1024.0 * 1024.0 {
+        format!("{:.0} KB", bytes_per_sec / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes_per_sec / (1024.0 * 1024.0))
+    }
+}
+
+fn format_duration(secs: f64) -> String {
+    if !secs.is_finite() || secs < 0.0 {
+        return "--".to_string();
+    }
+    let total_secs = secs.round() as u64;
+    let m = total_secs / 60;
+    let s = total_secs % 60;
+    if m > 0 {
+        format!("{}m {}s", m, s)
+    } else {
+        format!("{}s", s)
     }
 }

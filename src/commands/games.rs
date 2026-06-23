@@ -119,15 +119,28 @@ async fn handle_game_selection(game: &GameDetails, settings: &mut AppSettings, g
 
     match action {
         Ok(Some(0)) => {
-            install_game(game, settings, gogdl).await;
+            install_game(game, settings, gogdl, is_installed).await;
         }
         _ => {}
     }
 }
 
-async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc<GogDl>) {
+async fn install_game(
+    game: &GameDetails,
+    settings: &mut AppSettings,
+    gogdl: Arc<GogDl>,
+    is_installed: bool,
+) {
     println!();
-    println!("{}", style(format!("Installing: {}", game.title)).cyan());
+    let action_label = if is_installed {
+        "Verifying / updating"
+    } else {
+        "Installing"
+    };
+    println!(
+        "{}",
+        style(format!("{}: {}", action_label, game.title)).cyan()
+    );
 
     let default_path = format!("{}/games", settings.data_path);
 
@@ -171,15 +184,20 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc
         None,
         &download_path,
         settings,
-        false,
+        is_installed,
     )
     .await
     {
         Ok(_) => {
             println!();
+            let verb = if is_installed {
+                "verified/updated"
+            } else {
+                "installed"
+            };
             println!(
                 "{}",
-                style(format!("✅ {} installed successfully!", game_title)).green()
+                style(format!("✅ {} {} successfully!", game_title, verb)).green()
             );
         }
         Err(err) => {
