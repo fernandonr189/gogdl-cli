@@ -4,7 +4,7 @@ use console::style;
 use dialoguer::{FuzzySelect, Input, theme::ColorfulTheme};
 use gogdl_lib::{GogDl, GogdlError, client::ClientError, games::GameDetails};
 
-use crate::{auth::manage_auth, hint, settings::AppSettings};
+use crate::{auth::manage_auth, commands::common, hint, settings::AppSettings};
 
 /// Interactive games browser
 pub async fn handle_games(gogdl: Arc<GogDl>, settings: &mut AppSettings) {
@@ -129,6 +129,15 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc
     println!();
     println!("{}", style(format!("Installing: {}", game.title)).cyan());
 
+    let chosen_build = match common::select_build_interactive(gogdl.clone(), game.id, None).await
+    {
+        Some(build) => build,
+        None => {
+            println!("{}", style("Cancelled").dim());
+            return;
+        }
+    };
+
     let default_path = format!("{}/games", settings.data_path);
 
     let custom_path: String = Input::with_theme(&ColorfulTheme::default())
@@ -153,7 +162,11 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc
     } else {
         Some(download_path.as_str())
     };
-    hint::print_command_hint(&hint::download_command(game.id, path_arg));
+    hint::print_command_hint(&hint::download_command(
+        game.id,
+        path_arg,
+        Some(&chosen_build.version_name),
+    ));
 
     println!(
         "{}",
@@ -168,7 +181,7 @@ async fn install_game(game: &GameDetails, settings: &mut AppSettings, gogdl: Arc
     match crate::commands::download::handle_download(
         gogdl,
         game_id,
-        None,
+        Some(chosen_build.version_name.clone()),
         &download_path,
         settings,
         false,

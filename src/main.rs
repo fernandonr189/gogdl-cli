@@ -42,8 +42,14 @@ async fn main() -> Result<(), anyhow::Error> {
             version_id,
             path,
             fix,
+            list_builds,
         } => {
             manage_auth(gogdl.clone()).await;
+
+            if list_builds {
+                commands::download::list_builds_cli(gogdl, game_id).await?;
+                return Ok(());
+            }
 
             let download_path = format!(
                 "{}/{}",

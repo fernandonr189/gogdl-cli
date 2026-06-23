@@ -19,11 +19,15 @@ pub fn run_command(game_id: i32) -> String {
 }
 
 /// Build a CLI command string for downloading a game
-pub fn download_command(game_id: i32, path: Option<&str>) -> String {
-    match path {
-        Some(p) => format!("gogdl download -g {} -p \"{}\"", game_id, p),
-        None => format!("gogdl download -g {}", game_id),
+pub fn download_command(game_id: i32, path: Option<&str>, version: Option<&str>) -> String {
+    let mut command = format!("gogdl download -g {}", game_id);
+    if let Some(v) = version {
+        command.push_str(&format!(" -v \"{}\"", v));
     }
+    if let Some(p) = path {
+        command.push_str(&format!(" -p \"{}\"", p));
+    }
+    command
 }
 
 /// Build a CLI command string for setting proton version

@@ -61,6 +61,10 @@ pub enum Commands {
         #[arg(short, long)]
         /// Re-verify and resume/repair an already-downloaded build instead of skipping it
         fix: bool,
+
+        #[arg(short = 'b', long = "list-builds")]
+        /// List available builds for the game instead of downloading
+        list_builds: bool,
     },
 
     /// Manage Proton/Wine versions (interactive if no options specified)

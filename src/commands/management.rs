@@ -146,6 +146,7 @@ pub async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<Go
             "Upload cloud saves",
             "Verify / repair download",
             "Update game",
+            "Change to a different build",
             "← Back",
         ];
 
@@ -185,7 +186,11 @@ pub async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<Go
             }
             Ok(Some(10)) => {
                 manage_auth(gogdl.clone()).await;
-                update_interactive(settings, game_id, gogdl.clone()).await;
+                update_interactive(settings, game_id, gogdl.clone(), None).await;
+            }
+            Ok(Some(11)) => {
+                manage_auth(gogdl.clone()).await;
+                change_build_interactive(settings, game_id, gogdl.clone()).await;
             }
             _ => break,
         }
@@ -609,8 +614,13 @@ async fn update_game(
     Ok(())
 }
 
-async fn update_interactive(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>) {
-    let check = match check_for_update(settings, game_id, gogdl.clone(), None).await {
+async fn update_interactive(
+    settings: &mut AppSettings,
+    game_id: i32,
+    gogdl: Arc<GogDl>,
+    target_version: Option<String>,
+) {
+    let check = match check_for_update(settings, game_id, gogdl.clone(), target_version).await {
         Ok(check) => check,
         Err(e) => {
             println!("{}", style(format!("❌ Error: {}", e)).red());
@@ -630,7 +640,7 @@ async fn update_interactive(settings: &mut AppSettings, game_id: i32, gogdl: Arc
     );
     println!(
         "{}",
-        style(format!("Latest build:  {}", check.target_build)).dim()
+        style(format!("Target build:  {}", check.target_build)).dim()
     );
 
     let (estimate_tx, _estimate_rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
@@ -678,6 +688,34 @@ async fn update_interactive(settings: &mut AppSettings, game_id: i32, gogdl: Arc
     match update_game(settings, game_id, gogdl, &check).await {
         Ok(_) => println!("{}", style("✅ Update complete").green()),
         Err(e) => println!("{}", style(format!("❌ Error: {}", e)).red()),
+    }
+}
+
+/// Lets the user browse all available builds and switch the installed game
+/// to whichever one they pick (older or newer than the current build).
+/// Reuses `update_interactive`'s confirm/estimate/proceed flow once a target
+/// build is chosen.
+async fn change_build_interactive(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>) {
+    let current_build = match settings
+        .downloaded_games
+        .iter()
+        .find(|g| g.game_id == game_id)
+    {
+        Some(g) => g.build_id.clone(),
+        None => {
+            println!("{}", style("Game not found").red());
+            return;
+        }
+    };
+
+    let chosen =
+        common::select_build_interactive(gogdl.clone(), game_id, Some(&current_build)).await;
+
+    match chosen {
+        Some(build) => {
+            update_interactive(settings, game_id, gogdl, Some(build.version_name)).await
+        }
+        None => println!("{}", style("Cancelled").dim()),
     }
 }
 

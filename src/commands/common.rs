@@ -1,3 +1,68 @@
+use std::sync::Arc;
+
+use console::style;
+use dialoguer::{FuzzySelect, theme::ColorfulTheme};
+use gogdl_lib::{GogDl, games::GameBuild};
+
+/// Lists builds via `download::list_builds` and lets the user pick one.
+/// Highlights index 0 as "(latest)" and, if `current_version` matches a
+/// build's `version_name`, tags it "(installed)". Returns `None` if the
+/// fetch fails, the list is empty, or the user backs out.
+pub async fn select_build_interactive(
+    gogdl: Arc<GogDl>,
+    game_id: i32,
+    current_version: Option<&str>,
+) -> Option<GameBuild> {
+    let builds = match crate::commands::download::list_builds(gogdl, game_id).await {
+        Ok(builds) => builds,
+        Err(err) => {
+            println!("{}", style(format!("Error fetching builds: {}", err)).red());
+            return None;
+        }
+    };
+
+    if builds.is_empty() {
+        println!("{}", style("No builds found for this game.").yellow());
+        return None;
+    }
+
+    let mut options: Vec<String> = builds
+        .iter()
+        .enumerate()
+        .map(|(idx, build)| {
+            let mut tags = Vec::new();
+            if idx == 0 {
+                tags.push("latest");
+            }
+            if current_version == Some(build.version_name.as_str()) {
+                tags.push("installed");
+            }
+            let suffix = if tags.is_empty() {
+                String::new()
+            } else {
+                format!("  ({})", tags.join(", "))
+            };
+            format!(
+                "{}  ({}){}",
+                build.version_name, build.date_published, suffix
+            )
+        })
+        .collect();
+    options.push("<- Cancel".to_string());
+
+    println!();
+    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select a build")
+        .items(&options)
+        .default(0)
+        .interact_opt();
+
+    match selection {
+        Ok(Some(idx)) if idx < builds.len() => builds.into_iter().nth(idx),
+        _ => None,
+    }
+}
+
 pub async fn find_executables(base_path: &str) -> Vec<String> {
     let mut executables = Vec::new();
 

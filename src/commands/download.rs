@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     collections::VecDeque,
     io::Write,
     process::exit,
@@ -91,26 +92,60 @@ pub async fn handle_download(
     Ok(())
 }
 
-/// Fetches all builds for a game and returns the one with the most recent
-/// `date_published`, or `None` if no build has a parseable publish date.
-pub async fn find_latest_build(
-    gogdl: Arc<GogDl>,
-    game_id: i32,
-) -> Result<Option<GameBuild>, GogdlError> {
+/// Fetches all builds for a game, sorted by `date_published` descending
+/// (latest first). Builds with an unparseable date are dropped.
+pub async fn list_builds(gogdl: Arc<GogDl>, game_id: i32) -> Result<Vec<GameBuild>, GogdlError> {
     let game_builds = gogdl
         .get_game_builds(game_id, OperatingSystem::Windows)
         .await?
         .items;
 
-    Ok(game_builds
+    let mut dated: Vec<(DateTime<Utc>, GameBuild)> = game_builds
         .into_iter()
         .filter_map(|b| {
             DateTime::parse_from_str(&b.date_published, "%Y-%m-%dT%H:%M:%S%z")
                 .ok()
                 .map(|dt| (dt.with_timezone(&Utc), b))
         })
-        .max_by_key(|(dt, _)| *dt)
-        .map(|(_, b)| b))
+        .collect();
+    dated.sort_by_key(|(dt, _)| Reverse(*dt));
+
+    Ok(dated.into_iter().map(|(_, b)| b).collect())
+}
+
+/// Fetches all builds for a game and returns the one with the most recent
+/// `date_published`, or `None` if no build has a parseable publish date.
+pub async fn find_latest_build(
+    gogdl: Arc<GogDl>,
+    game_id: i32,
+) -> Result<Option<GameBuild>, GogdlError> {
+    Ok(list_builds(gogdl, game_id).await?.into_iter().next())
+}
+
+/// Prints all builds for a game (latest first, tagged `(latest)`) for the
+/// `download --list-builds` CLI flag.
+pub async fn list_builds_cli(gogdl: Arc<GogDl>, game_id: i32) -> Result<(), GogdlError> {
+    let builds = list_builds(gogdl, game_id).await?;
+
+    if builds.is_empty() {
+        println!("No builds found for this game.");
+        return Ok(());
+    }
+
+    println!();
+    println!("{}", console::style("Available builds:").bold());
+    for (idx, build) in builds.iter().enumerate() {
+        let tag = if idx == 0 { "  (latest)" } else { "" };
+        println!(
+            "  {} - {}{}",
+            console::style(&build.version_name).cyan(),
+            build.date_published,
+            console::style(tag).dim()
+        );
+    }
+    println!();
+
+    Ok(())
 }
 
 /// Drives `estimate_download` then `download_build` over a single shared
