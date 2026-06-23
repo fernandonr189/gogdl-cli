@@ -457,7 +457,7 @@ async fn verify_download(
             .find(|g| g.game_id == game_id)
             .ok_or_else(|| anyhow::anyhow!("Game not found in downloaded games"))?;
 
-        // game.path is title-suffixed (settings.add_game appends `/{title}`); handle_download
+        // game.path is title-suffixed (settings.add_game appends `/{title}`); verify_and_repair_game
         // needs the root games directory it was originally given, so derive the parent back out.
         let root_path = std::path::Path::new(&game.path)
             .parent()
@@ -470,15 +470,20 @@ async fn verify_download(
         (game.build_id.clone(), root_path)
     };
 
-    crate::commands::download::handle_download(
-        gogdl,
-        game_id,
-        Some(build_id),
-        &root_path,
-        settings,
-        true,
-    )
-    .await?;
+    crate::commands::download::verify_and_repair_game(gogdl, game_id, &build_id, &root_path)
+        .await?;
+
+    // Verify/repair never changes the build_id or path of an already-tracked game, so
+    // update the existing entry in place rather than going through settings.add_game --
+    // add_game unconditionally wipes proton_version/executable/prefix_path/env vars/args,
+    // which would otherwise silently reset the game's run configuration on every repair.
+    let game = settings
+        .downloaded_games
+        .iter_mut()
+        .find(|g| g.game_id == game_id && g.build_id == build_id)
+        .ok_or_else(|| anyhow::anyhow!("Game disappeared from settings during verify"))?;
+    game.download_complete = true;
+    settings.save().await?;
 
     Ok(())
 }

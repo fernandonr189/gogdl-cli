@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use gogdl_lib::{
     GogDl, GogdlError,
     client::ClientError,
-    games::{DownloadOptions, OperatingSystem},
+    games::{DownloadOptions, OperatingSystem, RepairProgress, RepairSummary},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -208,6 +208,124 @@ pub async fn download_game(
             downloaded_size, total_size
         );
         Ok(false)
+    }
+}
+
+/// Single-pass verify/repair: drives `GogDl::verify_and_repair_build` and
+/// renders one continuous progress bar by combining `Verifying::verified`
+/// with `Downloading::downloaded`, per that API's own progress contract
+/// (`Downloading::downloaded` is session-only and its `total` is the whole
+/// build, not "remaining to repair" — adding it to the latest verified count
+/// is what keeps the percentage meaningful).
+pub async fn verify_and_repair_game(
+    gogdl: Arc<GogDl>,
+    game_id: i32,
+    build_name: &str,
+    path: &str,
+) -> Result<RepairSummary, GogdlError> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<RepairProgress>();
+    let build_name_clone = build_name.to_string();
+    let path_clone = path.to_string();
+
+    let task = tokio::spawn(async move {
+        gogdl
+            .verify_and_repair_build(
+                game_id,
+                &build_name_clone,
+                tx,
+                &path_clone,
+                OperatingSystem::Windows,
+                CancellationToken::new(),
+                DownloadOptions::default(),
+            )
+            .await
+    });
+
+    let mut total_size: i64 = 0;
+    let mut last_verified: i64 = 0;
+    let mut printed_total = false;
+    let start = Instant::now();
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            RepairProgress::Verifying { verified, total } => {
+                total_size = total;
+                last_verified = verified;
+
+                if !printed_total {
+                    println!("Total size: {} MB", total_size / 1024 / 1024);
+                    printed_total = true;
+                }
+
+                let percent = (last_verified as f64 / total_size.max(1) as f64) * 100.0;
+                print!(
+                    "\r{} [{:50}] {:.2}%  ({:.2} MB / {:.2} MB)",
+                    console::style("Verifying:").green(),
+                    "=".repeat((percent as usize) / 2),
+                    percent,
+                    last_verified as f64 / 1024.0 / 1024.0,
+                    total_size as f64 / 1024.0 / 1024.0,
+                );
+                let _ = std::io::stdout().flush();
+            }
+            RepairProgress::Downloading { downloaded, .. } => {
+                let combined = last_verified + downloaded;
+                let percent = (combined as f64 / total_size.max(1) as f64) * 100.0;
+
+                let elapsed_secs = start.elapsed().as_secs_f64();
+                let speed_suffix = if elapsed_secs > 0.5 && downloaded > 0 {
+                    format!("  {}/s", format_speed(downloaded as f64 / elapsed_secs))
+                } else {
+                    String::new()
+                };
+
+                print!(
+                    "\r{} [{:50}] {:.2}%  ({:.2} MB / {:.2} MB){}",
+                    console::style("Repairing:").yellow(),
+                    "=".repeat((percent as usize) / 2),
+                    percent,
+                    combined as f64 / 1024.0 / 1024.0,
+                    total_size as f64 / 1024.0 / 1024.0,
+                    speed_suffix
+                );
+                let _ = std::io::stdout().flush();
+            }
+        }
+    }
+
+    println!(); // New line after progress
+
+    let summary = match task.await {
+        Ok(inner) => inner?,
+        Err(join_err) => return Err(ClientError::AsyncError(join_err).into()),
+    };
+
+    print_repair_summary(&summary);
+
+    Ok(summary)
+}
+
+fn print_repair_summary(summary: &RepairSummary) {
+    println!("Verification complete!");
+    println!("Total size: {} MB", summary.total_size / 1024 / 1024);
+    let pct = (summary.already_valid as f64 / summary.total_size.max(1) as f64) * 100.0;
+    println!(
+        "Already valid: {} MB ({:.1}%)",
+        summary.already_valid / 1024 / 1024,
+        pct
+    );
+    println!("Repaired: {} MB", summary.repaired / 1024 / 1024);
+
+    if summary.repaired_files.is_empty() {
+        println!("No files needed repair.");
+    } else {
+        println!("Repaired files ({}):", summary.repaired_files.len());
+        for file in summary.repaired_files.iter().take(10) {
+            println!("  - {}", file);
+        }
+        if summary.repaired_files.len() > 10 {
+            println!("  + {} more", summary.repaired_files.len() - 10);
+        }
     }
 }
 
