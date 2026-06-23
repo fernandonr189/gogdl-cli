@@ -1,4 +1,10 @@
-use std::{io::Write, process::exit, sync::Arc, time::Instant};
+use std::{
+    collections::VecDeque,
+    io::Write,
+    process::exit,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use chrono::{DateTime, Utc};
 use gogdl_lib::{
@@ -107,97 +113,117 @@ pub async fn find_latest_build(
         .map(|(_, b)| b))
 }
 
+/// Drives `estimate_download` then `download_build` over a single shared
+/// progress channel, so the displayed bar climbs live during verification
+/// (no silent freeze on resumed downloads) and then continues — without
+/// resetting — through the download phase, since `download_build`'s
+/// `verified_files` parameter lets it skip re-verifying chunks the estimate
+/// pass already confirmed and report progress on that same `0..total_size`
+/// scale.
 pub async fn download_game(
     gogdl: Arc<GogDl>,
     game_id: i32,
     build_name: &str,
     path: &str,
 ) -> Result<bool, GogdlError> {
-    let estimate = gogdl
-        .estimate_download(game_id, OperatingSystem::Windows, build_name, path)
-        .await?;
-    let total_size = estimate.total_size as u64;
-    let already_present = estimate.already_present.max(0) as u64;
-
-    println!("Total size: {} MB", total_size / 1024 / 1024);
-    if estimate.already_present > 0 {
-        let pct = (already_present as f64 / total_size.max(1) as f64) * 100.0;
-        println!(
-            "Already on disk: {} MB ({:.1}%) — resuming",
-            already_present / 1024 / 1024,
-            pct
-        );
-    }
-    println!(
-        "Remaining to download: {} MB",
-        estimate.remaining.max(0) / 1024 / 1024
-    );
-
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
+    let (verifying_tx, verifying_rx) = tokio::sync::watch::channel(true);
+
     let build_name_clone = build_name.to_string();
     let path_clone = path.to_string();
+    let tx_for_download = tx.clone();
 
-    // Spawn the download task
-    let download_task = tokio::spawn(async move {
+    let cancellation_token = CancellationToken::new();
+    let cancellation_token_for_download = cancellation_token.clone();
+    let canceller = spawn_ctrl_c_canceller(cancellation_token);
+
+    let task = tokio::spawn(async move {
+        let estimate = gogdl
+            .estimate_download(
+                game_id,
+                OperatingSystem::Windows,
+                &build_name_clone,
+                &path_clone,
+                tx,
+            )
+            .await?;
+        verifying_tx.send(false).ok();
         gogdl
             .download_build(
                 game_id,
                 &build_name_clone,
-                tx,
+                tx_for_download,
                 &path_clone,
                 OperatingSystem::Windows,
-                CancellationToken::new(),
+                cancellation_token_for_download,
                 DownloadOptions::default(),
+                estimate.verified_files,
             )
             .await
     });
 
-    // Progress reporting loop
-    let mut downloaded_size: i64 = 0;
-    let start = Instant::now();
-    let already_present_baseline = already_present as i64;
+    let mut total_size: i64 = 0;
+    let mut last_progress: i64 = 0;
+    let mut printed_total = false;
+    let mut speed_tracker = SpeedTracker::new(Duration::from_secs(1));
 
-    while let Some((downloaded, _total)) = rx.recv().await {
-        downloaded_size = downloaded;
-        let percent = ((downloaded_size as f64 / total_size as f64) * 100.0) as f64;
+    while let Some((progress, total)) = rx.recv().await {
+        total_size = total;
+        last_progress = progress;
 
-        // Only update display when percentage changes
-        let downloaded_mb = downloaded_size / 1024 / 1024;
-        let total_mb = total_size / 1024 / 1024;
+        if !printed_total {
+            println!("Total size: {} MB", total_size / 1024 / 1024);
+            printed_total = true;
+        }
 
-        let elapsed_secs = start.elapsed().as_secs_f64();
-        let session_bytes = (downloaded_size - already_present_baseline).max(0) as f64;
-        let speed_suffix = if elapsed_secs > 0.5 && session_bytes > 0.0 {
-            let speed = session_bytes / elapsed_secs;
-            let remaining_bytes = (total_size as i64 - downloaded_size).max(0) as f64;
-            let eta = if speed > 0.0 {
-                format_duration(remaining_bytes / speed)
-            } else {
-                "--".to_string()
-            };
-            format!("  {}/s, ETA {}", format_speed(speed), eta)
+        let verifying = *verifying_rx.borrow();
+        if verifying {
+            let percent = (progress as f64 / total_size.max(1) as f64) * 100.0;
+            print!(
+                "\r{} [{:50}] {:.2}%  ({:.2} MB / {:.2} MB)",
+                console::style("Verifying:").green(),
+                "=".repeat((percent as usize) / 2),
+                percent,
+                progress as f64 / 1024.0 / 1024.0,
+                total_size as f64 / 1024.0 / 1024.0,
+            );
         } else {
-            String::new()
-        };
+            let percent = (progress as f64 / total_size.max(1) as f64) * 100.0;
+            let speed_suffix = if let Some(speed) = speed_tracker.sample(progress) {
+                let remaining_bytes = (total_size - progress).max(0) as f64;
+                let eta = if speed > 0.0 {
+                    format_duration(remaining_bytes / speed)
+                } else {
+                    "--".to_string()
+                };
+                format!("  {}/s, ETA {}", format_speed(speed), eta)
+            } else {
+                String::new()
+            };
 
-        print!(
-            "\r{} [{:50}] {:.2}%  ({:.2} MB / {:.2} MB){}",
-            console::style("Progress:").green(),
-            "=".repeat((percent as usize) / 2),
-            percent,
-            downloaded_mb,
-            total_mb,
-            speed_suffix
-        );
+            print!(
+                "\r{} [{:50}] {:.2}%  ({:.2} MB / {:.2} MB){}",
+                console::style("Downloading:").yellow(),
+                "=".repeat((percent as usize) / 2),
+                percent,
+                progress as f64 / 1024.0 / 1024.0,
+                total_size as f64 / 1024.0 / 1024.0,
+                speed_suffix
+            );
+        }
 
-        // Flush stdout to ensure progress is displayed immediately
         let _ = std::io::stdout().flush();
     }
 
     println!(); // New line after progress
+    canceller.abort();
 
-    match download_task.await {
+    match task.await {
         Ok(Ok(())) => {}
+        Ok(Err(GogdlError::ClientError(ClientError::Cancelled))) => {
+            println!("Download cancelled.");
+            return Ok(false);
+        }
         Ok(Err(err)) => {
             println!("Error downloading build: {}", err);
             return Err(err);
@@ -208,13 +234,13 @@ pub async fn download_game(
         }
     }
 
-    if downloaded_size >= total_size as i64 {
+    if last_progress >= total_size {
         println!("Download complete!");
         Ok(true)
     } else {
         println!(
             "Download incomplete! ({}/{} bytes)",
-            downloaded_size, total_size
+            last_progress, total_size
         );
         Ok(false)
     }
@@ -236,6 +262,10 @@ pub async fn verify_and_repair_game(
     let build_name_clone = build_name.to_string();
     let path_clone = path.to_string();
 
+    let cancellation_token = CancellationToken::new();
+    let cancellation_token_for_repair = cancellation_token.clone();
+    let canceller = spawn_ctrl_c_canceller(cancellation_token);
+
     let task = tokio::spawn(async move {
         gogdl
             .verify_and_repair_build(
@@ -244,7 +274,7 @@ pub async fn verify_and_repair_game(
                 tx,
                 &path_clone,
                 OperatingSystem::Windows,
-                CancellationToken::new(),
+                cancellation_token_for_repair,
                 DownloadOptions::default(),
             )
             .await
@@ -253,7 +283,7 @@ pub async fn verify_and_repair_game(
     let mut total_size: i64 = 0;
     let mut last_verified: i64 = 0;
     let mut printed_total = false;
-    let start = Instant::now();
+    let mut speed_tracker = SpeedTracker::new(Duration::from_secs(1));
 
     while let Some(event) = rx.recv().await {
         match event {
@@ -281,9 +311,8 @@ pub async fn verify_and_repair_game(
                 let combined = last_verified + downloaded;
                 let percent = (combined as f64 / total_size.max(1) as f64) * 100.0;
 
-                let elapsed_secs = start.elapsed().as_secs_f64();
-                let speed_suffix = if elapsed_secs > 0.5 && downloaded > 0 {
-                    format!("  {}/s", format_speed(downloaded as f64 / elapsed_secs))
+                let speed_suffix = if let Some(speed) = speed_tracker.sample(downloaded) {
+                    format!("  {}/s", format_speed(speed))
                 } else {
                     String::new()
                 };
@@ -303,8 +332,13 @@ pub async fn verify_and_repair_game(
     }
 
     println!(); // New line after progress
+    canceller.abort();
 
     let summary = match task.await {
+        Ok(Err(GogdlError::ClientError(ClientError::Cancelled))) => {
+            println!("Repair cancelled.");
+            return Err(GogdlError::ClientError(ClientError::Cancelled));
+        }
         Ok(inner) => inner?,
         Err(join_err) => return Err(ClientError::AsyncError(join_err).into()),
     };
@@ -335,6 +369,61 @@ fn print_repair_summary(summary: &RepairSummary) {
         if summary.repaired_files.len() > 10 {
             println!("  + {} more", summary.repaired_files.len() - 10);
         }
+    }
+}
+
+/// Cancels `token` on the first Ctrl+C and force-exits the process on a
+/// second one, in case the in-flight operation hangs during cleanup.
+/// Returns the task handle so the caller can `.abort()` it once the guarded
+/// operation finishes, instead of leaking a listener for the rest of the process.
+fn spawn_ctrl_c_canceller(token: CancellationToken) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_err() {
+            return;
+        }
+        println!(
+            "\n{}",
+            console::style("Cancelling... (press Ctrl+C again to force quit)").yellow()
+        );
+        token.cancel();
+        if tokio::signal::ctrl_c().await.is_ok() {
+            std::process::exit(130); // conventional SIGINT exit code
+        }
+    })
+}
+
+/// Tracks a trailing window of cumulative-byte samples to compute a
+/// recent-average transfer speed, so the displayed rate reacts to real
+/// throughput changes within the window instead of being smoothed out by
+/// the whole transfer's history.
+struct SpeedTracker {
+    samples: VecDeque<(Instant, i64)>,
+    window: Duration,
+}
+
+impl SpeedTracker {
+    fn new(window: Duration) -> Self {
+        Self {
+            samples: VecDeque::new(),
+            window,
+        }
+    }
+
+    /// Records a new cumulative-bytes sample and returns the bytes/sec
+    /// average over the trailing window, or `None` until enough time has
+    /// passed for a stable estimate.
+    fn sample(&mut self, bytes: i64) -> Option<f64> {
+        let now = Instant::now();
+        self.samples.push_back((now, bytes));
+        while self.samples.len() > 1 && now.duration_since(self.samples[0].0) > self.window {
+            self.samples.pop_front();
+        }
+        let (oldest_t, oldest_bytes) = *self.samples.front()?;
+        let elapsed = now.duration_since(oldest_t).as_secs_f64();
+        if elapsed < 0.2 {
+            return None;
+        }
+        Some((bytes - oldest_bytes) as f64 / elapsed)
     }
 }
 

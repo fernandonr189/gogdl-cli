@@ -633,12 +633,14 @@ async fn update_interactive(settings: &mut AppSettings, game_id: i32, gogdl: Arc
         style(format!("Latest build:  {}", check.target_build)).dim()
     );
 
+    let (estimate_tx, _estimate_rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
     match gogdl
         .estimate_download(
             game_id,
             OperatingSystem::Windows,
             &check.target_build,
             &check.root_path,
+            estimate_tx,
         )
         .await
     {
