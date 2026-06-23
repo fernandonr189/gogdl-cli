@@ -4,7 +4,6 @@ use anyhow::Result;
 use console::style;
 use dialoguer::{Confirm, FuzzySelect, Input, theme::ColorfulTheme};
 use gogdl_lib::GogDl;
-use gogdl_lib::games::OperatingSystem;
 use walkdir::WalkDir;
 
 use crate::auth::manage_auth;
@@ -643,32 +642,6 @@ async fn update_interactive(
         style(format!("Target build:  {}", check.target_build)).dim()
     );
 
-    let (estimate_tx, _estimate_rx) = tokio::sync::mpsc::unbounded_channel::<(i64, i64)>();
-    match gogdl
-        .estimate_download(
-            game_id,
-            OperatingSystem::Windows,
-            &check.target_build,
-            &check.root_path,
-            estimate_tx,
-        )
-        .await
-    {
-        Ok(estimate) => println!(
-            "{}",
-            style(format!(
-                "Estimated download: {} MB",
-                estimate.remaining.max(0) / 1024 / 1024
-            ))
-            .dim()
-        ),
-        Err(e) => println!(
-            "{}",
-            style(format!("(Could not estimate download size: {})", e)).dim()
-        ),
-    }
-    println!();
-
     let confirmed = Confirm::with_theme(&ColorfulTheme::default())
         .with_prompt("Proceed with update?")
         .default(true)
@@ -693,8 +666,8 @@ async fn update_interactive(
 
 /// Lets the user browse all available builds and switch the installed game
 /// to whichever one they pick (older or newer than the current build).
-/// Reuses `update_interactive`'s confirm/estimate/proceed flow once a target
-/// build is chosen.
+/// Reuses `update_interactive`'s confirm/proceed flow once a target build is
+/// chosen.
 async fn change_build_interactive(settings: &mut AppSettings, game_id: i32, gogdl: Arc<GogDl>) {
     let current_build = match settings
         .downloaded_games
