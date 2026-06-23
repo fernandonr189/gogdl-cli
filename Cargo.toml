@@ -2,6 +2,9 @@
 name = "gogdl"
 version = "0.1.0"
 edition = "2024"
+description = "Download, configure, and run GOG games on Linux with Proton/Wine prefix management and cloud save sync"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/fernandonr189/gogdl-cli"
 
 [dependencies]
 anyhow = "1.0.100"
@@ -25,3 +28,17 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+[package.metadata.deb]
+maintainer = "Fernando Ismael Navarrete Ruiz"
+copyright = "2026, Fernando Ismael Navarrete Ruiz"
+section = "games"
+priority = "optional"
+extended-description = """\
+gogdl downloads, configures, and runs GOG games on Linux. It manages \
+Proton/Wine prefixes automatically and supports cloud save sync, with both \
+an interactive menu and direct CLI flags for scripting."""
+assets = [
+    ["target/release/gogdl", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/gogdl/README.md", "644"],
+]

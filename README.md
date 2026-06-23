@@ -25,6 +25,15 @@ The tool is now functional for downloading, configuring, running games, and mana
 cargo install --path .
 ```
 
+### Ubuntu/Debian package
+
+To build a `.deb` and install it via `apt`:
+
+```bash
+./scripts/build-deb.sh
+sudo apt install ./target/debian/gogdl_*.deb
+```
+
 ## Usage
 
 ### Login
@@ -260,4 +269,4 @@ This project was inspired by the [Heroic Games Launcher](https://github.com/Hero
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
