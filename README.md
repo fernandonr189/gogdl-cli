@@ -17,6 +17,7 @@ The tool is now functional for downloading, configuring, running games, and mana
 - ⚙️ Configure game settings (executable, launch args, environment variables)
 - 🚀 Run games with automatic setup prompts
 - ☁️ Download cloud save files for games that support them
+- 🗑️ Uninstall games and reclaim disk space
 - 💡 CLI command hints shown during interactive use (for learning scripting commands)
 
 ## Installation
@@ -101,6 +102,7 @@ This opens an interactive menu where you can:
 - Clear arguments or environment variables
 - Download cloud save files (for games that support cloud saves)
 - Upload cloud save files (for games that support cloud saves)
+- Uninstall the game (deletes files and Wine prefix)
 
 ### Proton Management
 
@@ -177,6 +179,9 @@ gogdl manage -g <game_id> download-save-files
 
 # Upload cloud save files
 gogdl manage -g <game_id> upload-save-files
+
+# Uninstall a game (deletes files and Wine prefix)
+gogdl manage -g <game_id> uninstall
 ```
 
 ### Proton Management

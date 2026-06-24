@@ -9,8 +9,8 @@ use crate::{
     commands::{
         games::handle_games,
         management::{
-            download_save_files_for_game, handle_manage, update_cli, upload_save_files_for_game,
-            verify_download_cli,
+            download_save_files_for_game, handle_manage, uninstall_cli, update_cli,
+            upload_save_files_for_game, verify_download_cli,
         },
         proton::handle_proton,
         runner::handle_run,
@@ -152,6 +152,12 @@ async fn main() -> Result<(), anyhow::Error> {
                         manage_auth(gogdl.clone()).await;
                         if let Err(e) = update_cli(&mut settings, gid, gogdl, version).await {
                             eprintln!("Error updating game: {}", e);
+                            exit(1);
+                        }
+                    }
+                    ManageAction::Uninstall => {
+                        if let Err(e) = uninstall_cli(&mut settings, gid).await {
+                            eprintln!("Error uninstalling game: {}", e);
                             exit(1);
                         }
                     }

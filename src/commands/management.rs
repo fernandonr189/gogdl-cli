@@ -146,6 +146,7 @@ pub async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<Go
             "Verify / repair download",
             "Update game",
             "Change to a different build",
+            "Uninstall game",
             "← Back",
         ];
 
@@ -190,6 +191,10 @@ pub async fn manage_game(settings: &mut AppSettings, game_id: i32, gogdl: Arc<Go
             Ok(Some(11)) => {
                 manage_auth(gogdl.clone()).await;
                 change_build_interactive(settings, game_id, gogdl.clone()).await;
+            }
+            Ok(Some(12)) => {
+                uninstall_interactive(settings, game_id).await;
+                break;
             }
             _ => break,
         }
@@ -707,6 +712,84 @@ pub async fn update_cli(
     }
 
     update_game(settings, game_id, gogdl, &check).await
+}
+
+async fn uninstall_interactive(settings: &mut AppSettings, game_id: i32) {
+    let name = match settings
+        .downloaded_games
+        .iter()
+        .find(|g| g.game_id == game_id)
+    {
+        Some(g) => g.path.split('/').last().unwrap_or("Unknown").to_string(),
+        None => {
+            println!("{}", style("Game not found").red());
+            return;
+        }
+    };
+
+    println!();
+    println!(
+        "{}",
+        style(format!(
+            "⚠️  This will permanently delete \"{}\" and its Wine prefix from disk.",
+            name
+        ))
+        .yellow()
+    );
+
+    let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Are you sure you want to uninstall this game?")
+        .default(false)
+        .interact()
+        .unwrap_or(false);
+
+    if !confirmed {
+        println!("{}", style("Cancelled").dim());
+        return;
+    }
+
+    hint::print_command_hint(&hint::manage_uninstall_command(game_id));
+
+    match uninstall_game(settings, game_id).await {
+        Ok(_) => println!("{}", style(format!("✅ \"{}\" uninstalled", name)).green()),
+        Err(e) => println!("{}", style(format!("❌ Error: {}", e)).red()),
+    }
+}
+
+/// CLI mode: uninstall a game.
+pub async fn uninstall_cli(settings: &mut AppSettings, game_id: i32) -> Result<()> {
+    uninstall_game(settings, game_id).await
+}
+
+async fn uninstall_game(settings: &mut AppSettings, game_id: i32) -> Result<()> {
+    let (path, prefix_path) = match settings
+        .downloaded_games
+        .iter()
+        .find(|g| g.game_id == game_id)
+    {
+        Some(g) => (g.path.clone(), g.prefix_path.clone()),
+        None => return Err(anyhow::anyhow!("Game not found")),
+    };
+
+    if let Err(e) = tokio::fs::remove_dir_all(&path).await {
+        println!(
+            "{}",
+            style(format!("⚠️  Failed to remove install directory: {}", e)).yellow()
+        );
+    }
+
+    if let Some(prefix) = prefix_path
+        && let Err(e) = tokio::fs::remove_dir_all(&prefix).await
+    {
+        println!(
+            "{}",
+            style(format!("⚠️  Failed to remove Wine prefix: {}", e)).yellow()
+        );
+    }
+
+    settings.downloaded_games.retain(|g| g.game_id != game_id);
+    settings.save().await?;
+    Ok(())
 }
 
 // Original functions kept for compatibility

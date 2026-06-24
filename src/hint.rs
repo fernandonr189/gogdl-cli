@@ -81,6 +81,11 @@ pub fn manage_update_command(game_id: i32, version: Option<&str>) -> String {
     }
 }
 
+/// Build a CLI command string for uninstalling a game
+pub fn manage_uninstall_command(game_id: i32) -> String {
+    format!("gogdl manage -g {} uninstall", game_id)
+}
+
 /// Build a CLI command string for listing games
 pub fn games_list_command() -> String {
     "gogdl games -l".to_string()

@@ -149,4 +149,8 @@ pub enum ManageAction {
         /// Update to a specific version instead of the latest
         version: Option<String>,
     },
+
+    /// Permanently delete a game's installed files, Wine prefix, and settings entry
+    #[command(name = "uninstall")]
+    Uninstall,
 }
